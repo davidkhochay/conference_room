@@ -1,0 +1,389 @@
+## 1. Mental model
+
+**Tenant:** Good Life Group
+**Companies:** 7 companies under it, each mapped to one or more Google domains
+**Users:** All users visible in one global directory, tagged by company
+**Rooms:** Shared asset pool, tagged by location and maybe by company ownership
+
+Your app becomes the “room brain” across the whole org:
+
+* Syncs users and rooms from all Google domains.
+* Keeps a simple internal model of bookings, but writes the real events into Google Calendar.
+* Shows status and quick actions on tablets.
+* Gives admins knobs for rules and limits.
+* Shows analytics.
+
+---
+
+## 2. Identity, auth, and Google linkage
+
+You want:
+
+* No auth on tablets.
+* Internal tool on the web with auth.
+* Users appear automatically when they show up in a domain.
+
+A sane split:
+
+**Google-domain integration**
+
+* One **service integration per domain**, set up by a Google Workspace admin:
+
+  * They approve an OAuth app or a service account with domain-wide delegation.
+* That integration gives you:
+
+  * List of users in that domain (Directory API).
+  * Room resources, if they already exist (Calendar resources).
+  * Calendar read/write for events for a technical service account that “acts on behalf” of users when needed.
+
+**Web auth**
+
+Two options that fit what you wrote:
+
+1. **Admins only authenticate**
+
+   * Admins log in with Google.
+   * They manage rooms, rules, analytics, etc.
+   * Regular employees book only from:
+
+     * Door tablets (no identity).
+     * Lightweight internal booking page that lets you pick “Host: [user from directory]”.
+   * In this case, your system creates events on a generic “rooms integration” account and adds the selected host as an attendee.
+
+2. **Everyone authenticates with Google**
+
+   * You still sync users automatically, but web auth uses Google SSO.
+   * When someone books from the website, the event is created on *their* calendar as organizer.
+
+From your notes, this sounds close:
+
+* Tablets: no login, anonymous.
+* Website: Google auth for admins for sure, optional for everyone else.
+
+You can support both: if user is logged in, they default as host, otherwise you pick a host from the directory.
+
+---
+
+## 3. Data model outline
+
+Keep it simple, but room for growth.
+
+**Entities**
+
+* Company
+
+  * `id`
+  * `name` (e.g. “Good Life Mortgage West”)
+  * `primary_domain` (`company.com`)
+  * `other_domains` (list)
+* DomainIntegration
+
+  * `id`
+  * `domain`
+  * `company_id`
+  * `google_oauth_config` / `service_account_config`
+  * `status`
+* User
+
+  * `id`
+  * `google_user_id`
+  * `primary_email`
+  * `name`
+  * `company_id`
+  * `is_admin`
+* Location
+
+  * `id`
+  * `name` (e.g. “Phoenix Office”)
+  * `timezone`
+* Room
+
+  * `id`
+  * `name`
+  * `location_id`
+  * `google_resource_calendar_id`
+  * `capacity`
+  * `photo_url`
+  * `features` (TV, camera, etc.)
+* Booking
+
+  * `id`
+  * `room_id`
+  * `start_time`
+  * `end_time`
+  * `host_user_id` (optional if walk-up)
+  * `attendee_user_ids`
+  * `google_event_id`
+  * `source` (`tablet`, `web`, `auto-release`, etc.)
+  * `status` (`scheduled`, `in_progress`, `ended`, `cancelled`, `no_show`)
+  * `check_in_time` (for analytics)
+* Setting / Policy
+
+  * Global and per-location / per-room values for:
+
+    * Max meeting duration
+    * Hours where booking is allowed
+    * Auto-release rules
+
+You use Google as the truth for time / RSVPs, but your Booking table holds extra behavior data.
+
+---
+
+## 4. Booking flows
+
+### A. Walk-up booking from the tablet
+
+Context: tablet tied to a single room, no login.
+
+Flow:
+
+1. Tablet hits `/rooms/{roomId}/status` on your backend every few seconds.
+2. Screen shows:
+
+   * “Available until 2:30 PM” or “Busy, ends at 1:15 PM”.
+   * Next bookings timeline.
+3. User taps a quick-time button: 15 / 30 / 45 / 60 minutes.
+4. Backend:
+
+   * Uses Google FreeBusy for that room to find the largest free window starting now.
+   * Clips the requested length if needed.
+   * Creates an internal Booking record.
+   * Creates a Google Calendar event on a dedicated “Rooms Bot” calendar:
+
+     * Title like “Walk-up meeting” or “Room booking”.
+     * Attendees empty or some generic alias.
+   * Returns updated status.
+
+If the room was busy:
+
+* Show “Room occupied. Ends at 1:15 PM”.
+* Offer “Book next available slot: 1:15–1:45 PM”.
+
+Optional extension:
+
+* If a meeting is active, show “End now” and “Extend 15 / 30 mins” buttons.
+* Extension checks for conflicts, then updates Google event end time and your Booking.
+
+### B. Booking from the website
+
+Two main entry points.
+
+**1. “I know the room” (e.g. they scanned the QR)**
+
+* They scan the QR outside Room A.
+* QR points to something like `/room/ROOM_ID/book`.
+* If logged in:
+
+  * Host defaults to them.
+* If not:
+
+  * Host picker field with autocomplete across the full user directory.
+* Pick:
+
+  * Date and start time.
+  * Duration, or choose quick-presets.
+  * Attendees (search by name / email across all companies, show company label).
+* Backend:
+
+  * Validates that the room is free (again via Google).
+  * Creates Booking record.
+  * Creates Google Calendar event:
+
+    * Organizer: host’s calendar, if you got auth for them.
+    * Attendees: host + selected users + room resource.
+  * Google sends the invites and handles accept / maybe / decline.
+
+**2. “I know the people, find me a room”**
+
+* Start with date / time range, duration, list of attendees.
+
+* System suggests rooms:
+
+  * Filter by location, capacity, features.
+  * For each candidate room, check free/busy.
+  * Return sorted choices: “Phoenix – Room A, 10 seats, free” etc.
+
+* User picks one, you then create Booking + Google event as above.
+
+You can show a calendar picker that blocks out busy times across rooms, so they click on green slots only.
+
+---
+
+## 5. Tablets and QR code behavior
+
+**Tablet**
+
+* Per-room configuration:
+
+  * Room ID
+  * Location
+  * Orientation
+* UI layout:
+
+  Top:
+
+  * Room name, location.
+
+  Middle:
+
+  * Current state (green / red bar).
+  * “In use until 1:15 PM” or “Free until 2:30 PM”.
+
+  Bottom:
+
+  * Quick booking buttons.
+  * “Show upcoming” stripe.
+
+Add a small QR in a corner:
+
+* “Scan to book or extend from your phone.”
+* When scanned:
+
+  * Opens web booking for that room at “now”.
+  * If there is an active meeting and you are the host (or an attendee), offer:
+
+    * “Extend by 15 / 30 / 45 minutes.”
+
+**Claiming a walk-up**
+
+* A walk-up meeting created at the tablet has no host.
+* On the phone, if they scan during an active walk-up slot:
+
+  * Show “Claim meeting as host: [your Google account]”.
+  * Once claimed, update Booking.host, and update Google event:
+
+    * Change organizer or at least add the host as a main attendee.
+
+---
+
+## 6. Admin panel
+
+This is where your operations mindset can go wild in a good way.
+
+Sections:
+
+**Companies & domains**
+
+* List of companies.
+* Domains linked to each company.
+* Status of Google integrations per domain (OK, needs reauth, etc.).
+
+**Users**
+
+* All users, searchable.
+* Columns: name, email, company, role (user / admin).
+* Manual overrides:
+
+  * Mark someone as “feature-request manager”.
+  * Mark as “location admin” or “room admin”.
+
+**Rooms**
+
+* CRUD for rooms:
+
+  * Name, location, description.
+  * Link to Google resource calendar, or create one.
+  * Capacity.
+  * Photo upload.
+  * Features (TV, camera, whiteboard, etc.).
+* Button “Show QR” to generate and print door labels.
+
+**Policies**
+
+* Global and location-level rules:
+
+  * Max duration for any booking.
+  * Allowed booking hours (e.g. 7:00–19:00).
+  * Whether walk-up bookings are allowed.
+  * Auto-release window:
+
+    * “If no check-in by X minutes, free the room.”
+* Per-room overrides for VIP rooms.
+
+**Feature requests**
+
+* Small “Feedback / Feature request” module:
+
+  * Any logged-in user can submit.
+  * Admin view with status: open, in progress, shipped.
+  * Helps you collect internal product input.
+
+**Analytics**
+
+Start simple, then grow:
+
+* Utilization:
+
+  * Per room / location:
+
+    * Total hours available vs. booked.
+  * Heatmap by hour and day of week.
+* Booking sources:
+
+  * Tablet vs web vs API.
+* No-show rate:
+
+  * Count of meetings auto-released.
+* Average meeting length.
+* Top rooms by usage.
+* Cross-company usage patterns:
+
+  * Which companies use which locations / rooms.
+
+Later you can add export to CSV or API access.
+
+---
+
+## 7. Implementation phases
+
+Short version of a roadmap you could actually follow.
+
+**Phase 1: Foundations**
+
+* Data model and backend skeleton.
+* One domain integration with service account.
+* Sync jobs for:
+
+  * Users
+  * Rooms
+* Simple web admin to:
+
+  * View rooms and bookings.
+  * Manually create bookings that write to Google Calendar.
+* Very basic status API for a single test tablet.
+
+**Phase 2: Real UX**
+
+* Proper booking page:
+
+  * “Pick room” flow.
+  * “Find room” by attendees flow.
+* Tablet app:
+
+  * Locked to a room, quick buttons, status view.
+* QR generation and room-specific booking deep links.
+
+**Phase 3: Rules and analytics**
+
+* Admin-configurable policies.
+* Auto-release / check-in flows.
+* Analytics dashboards.
+
+**Phase 4: Multi-domain and scaling**
+
+* Add more domains under Good Life.
+* Location support.
+* Performance tuning for free/busy queries across many rooms.
+
+---
+
+## 8. Questions to tighten the design
+
+You’ve already answered a lot. A few more that guide details:
+
+1. For events created from tablets, do you care if they show up on a specific “Good Life Rooms” calendar everyone can see, or should they look more like normal events on a hidden integration account?
+2. When someone books from the website and picks attendees, do you want to lock them to one location, or can the system suggest rooms across all offices?
+3. Do you want check-in on the tablet (“Tap to confirm your meeting started”) to be mandatory for all bookings, or only those created from the web?
+4. Are you leaning toward Android tablets or iPads for the walls? That influences kiosk mode and deployment.
+
+If you want next, I can sketch actual API endpoints and a suggested tech stack (backend, frontend, tablet app) that fits your style.
