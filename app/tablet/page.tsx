@@ -59,14 +59,26 @@ export default function TabletRoomSelector() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 via-purple-600 to-pink-600">
       {/* Header */}
-      <div className="bg-black/20 backdrop-blur-md border-b border-white/20 p-8 shadow-lg">
+      <div className="bg-black/20 backdrop-blur-md border-b border-white/20 p-6 md:p-8 shadow-lg">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-5xl font-bold text-white drop-shadow-lg mb-3">
-            Tablet Display Setup
-          </h1>
-          <p className="text-white/90 text-2xl">
-            Select a room to display on this tablet
-          </p>
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="flex-1">
+              <h1 className="text-3xl md:text-5xl font-bold text-white drop-shadow-lg mb-2 md:mb-3">
+                Tablet Display Setup
+              </h1>
+              <p className="text-white/90 text-lg md:text-2xl">
+                Select a room to display on this tablet
+              </p>
+            </div>
+            <Link href="/">
+              <button className="px-4 py-2 md:px-6 md:py-3 bg-white/20 hover:bg-white/30 backdrop-blur-sm border-2 border-white/40 text-white font-semibold rounded-xl transition-all shadow-lg hover:scale-105">
+                <svg className="w-5 h-5 md:w-6 md:h-6 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <span className="hidden md:inline">Home</span>
+              </button>
+            </Link>
+          </div>
         </div>
       </div>
 
