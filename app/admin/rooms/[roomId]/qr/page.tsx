@@ -24,12 +24,20 @@ export default function RoomQRPage() {
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
   const [qrGenerated, setQrGenerated] = useState(false);
+  const [qrError, setQrError] = useState(false);
 
   useEffect(() => {
     if (roomId) {
       fetchRoom();
     }
   }, [roomId]);
+
+  useEffect(() => {
+    // Generate QR code after room is loaded and canvas is ready
+    if (room && canvasRef.current && !qrGenerated) {
+      generateQR(room.id);
+    }
+  }, [room, qrGenerated]);
 
   const fetchRoom = async () => {
     try {
@@ -38,7 +46,6 @@ export default function RoomQRPage() {
 
       if (result.success) {
         setRoom(result.data);
-        generateQR(result.data.id);
       }
     } catch (error) {
       console.error('Failed to fetch room:', error);
@@ -48,7 +55,10 @@ export default function RoomQRPage() {
   };
 
   const generateQR = async (id: string) => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current) {
+      console.error('Canvas ref not available');
+      return;
+    }
 
     const bookingUrl = `${window.location.origin}/book/room/${id}`;
     
@@ -62,8 +72,10 @@ export default function RoomQRPage() {
         },
       });
       setQrGenerated(true);
+      setQrError(false);
     } catch (error) {
       console.error('Failed to generate QR code:', error);
+      setQrError(true);
     }
   };
 
@@ -132,13 +144,31 @@ export default function RoomQRPage() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">{room.name}</h1>
             <p className="text-gray-600 mb-8">{room.location.name}</p>
 
-            {qrGenerated && (
-              <div className="mb-8">
-                <div className="inline-block p-8 bg-white rounded-lg shadow-lg border-4 border-gray-200">
-                  <canvas ref={canvasRef} className="mx-auto" />
+            <div className="mb-8">
+              {qrError ? (
+                <div className="p-8 bg-red-50 border-2 border-red-200 rounded-lg">
+                  <p className="text-red-600 font-semibold">Failed to generate QR code</p>
+                  <button 
+                    onClick={() => {
+                      setQrError(false);
+                      setQrGenerated(false);
+                      if (room) generateQR(room.id);
+                    }}
+                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                  >
+                    Retry
+                  </button>
                 </div>
+              ) : !qrGenerated ? (
+                <div className="p-8">
+                  <p className="text-gray-600">Generating QR code...</p>
+                </div>
+              ) : null}
+              
+              <div className="inline-block p-8 bg-white rounded-lg shadow-lg border-4 border-gray-200">
+                <canvas ref={canvasRef} className="mx-auto" style={{ display: qrGenerated ? 'block' : 'none' }} />
               </div>
-            )}
+            </div>
 
             <div className="mb-6">
               <p className="text-sm text-gray-600 mb-2">Scan to book this room:</p>
