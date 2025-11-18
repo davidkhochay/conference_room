@@ -1,0 +1,192 @@
+Here’s a prompt you can drop straight into your repo (e.g. `.cursorrules`, `cursor.md`, or a top-level `AI_INSTRUCTIONS.md`). Cursor will treat it as project context and coding rules.
+
+---
+
+**Project prompt for Cursor**
+
+> You are the primary AI engineer for this codebase.
+> Your job is to help build and maintain an internal conference-room booking platform for Good Life Group.
+
+### Product context
+
+Good Life Group is a single organization with ~7 companies under it.
+Each company has its own Google Workspace domain.
+All these domains belong to the same umbrella org and should be treated as one tenant.
+
+The platform you help build should:
+
+* Integrate with multiple Google Workspace domains.
+* Sync users and rooms from those domains.
+* Allow booking of conference rooms from a web app.
+* Power tablet displays mounted outside each room.
+* Write actual events to Google Calendar so invites, RSVPs, and visibility behave like standard meetings.
+* Provide an admin panel for configuration and analytics.
+
+Conceptual rules:
+
+* One **global tenant** (Good Life Group).
+* Multiple **companies**, each attached to one or more Google domains.
+* All users are visible in a shared directory, but each user belongs to a company, and the UI should show this.
+* Rooms can be shared across companies and are tagged by location and capacity.
+
+### Core features to respect when coding
+
+1. **Google integration**
+
+   * Use Google APIs (Calendar API and Admin SDK / Directory API).
+   * Sync:
+
+     * Users from each connected domain.
+     * Room resources from each domain.
+   * For bookings, create or update events in Google Calendar and attach the room resource and attendees.
+   * Let Google handle sending invitation emails and RSVP states.
+
+2. **Users and auth**
+
+   * This is an internal tool.
+   * Web app: use Google sign-in (SSO) for admins and, where needed, for regular users.
+   * Tablets: no sign-in. Tablets are bound to a specific room and authenticate to the backend using some device key or config, not a human login.
+   * The system maintains its own user records synced from Google, tagged with:
+
+     * Company
+     * Email
+     * Name
+     * Role (admin vs normal user)
+
+3. **Booking behavior**
+
+   * Rooms are booked through:
+
+     * Door tablets with **quick durations**: 15, 30, 45, 60 minutes.
+     * Web app with:
+
+       * Room-first flow (“I want *this* room at a time”).
+       * People-first flow (“I have these attendees, find a room”).
+   * On quick booking from a tablet:
+
+     * Use “now” as start time.
+     * Check room free/busy from Google and clip to the next conflict.
+     * Create a booking linked to that room and time.
+     * Create the Google Calendar event on a technical account / integration calendar, with the room as an attendee.
+   * On booking from the website:
+
+     * Let the user:
+
+       * Pick date, time, duration.
+       * Pick a room, or let the system suggest rooms based on availability, location, and capacity.
+       * Add attendees from the merged directory across all domains.
+     * Create booking + Google event with:
+
+       * A clear summary.
+       * The chosen room resource as an attendee.
+       * All selected attendees.
+     * Where possible, use the host’s own calendar as organizer if the host authenticated with Google.
+
+4. **Admin panel**
+
+   Build and maintain an admin panel with:
+
+   * Companies and domains:
+
+     * View and manage companies.
+     * Link one or more Google domains to each company.
+     * Show status of Google integration per domain.
+   * Users:
+
+     * Show all synced users with their company and domain.
+     * Ability to flag users as admins or location/room managers.
+   * Rooms:
+
+     * CRUD for rooms.
+     * Link each room to a Google resource calendar ID.
+     * Attributes: name, location, capacity, equipment flags, photo.
+     * Generate or show a QR code link for each room’s booking page.
+   * Policies:
+
+     * Max booking duration (global and per location/room override).
+     * Allowed booking hours.
+     * Whether walk-up bookings are allowed per room.
+     * Auto-release rules if no check-in happens within a certain window.
+   * Analytics:
+
+     * Room utilization over time.
+     * No-show rate.
+     * Usage split by location, room, and source (tablet vs web).
+     * Export endpoints or CSV where useful.
+
+5. **Tablet / room display behavior**
+
+   * Each tablet is tied to a single room.
+   * It should fetch room status from the backend:
+
+     * Current booking and end time.
+     * Next bookings.
+     * Whether the room is considered free or busy.
+   * It must support:
+
+     * Quick booking buttons with the standard durations.
+     * Optionally ending the current meeting early.
+     * Optional extension of the current booking if there is no conflict.
+   * The screen shows:
+
+     * Room name and location.
+     * Current state with a clear color: free vs busy.
+     * Upcoming bookings.
+   * Each room can show a QR code that opens the booking page for that room.
+
+### Architecture and stack expectations
+
+Unless the codebase states otherwise, follow these defaults:
+
+* Backend: Node.js with TypeScript.
+* Web framework: something conventional (Express / NestJS) with clear routing and separation of concerns.
+* DB: PostgreSQL with migrations.
+* Frontend: React (or Next.js React) with TypeScript.
+* Use environment variables for secrets, Google credentials, DB connection, etc.
+* Use typed models and DTOs. Avoid “any” where possible.
+
+Data model guidelines:
+
+* `Company`: name, related domains.
+* `DomainIntegration`: which domain, which company, Google config, integration status.
+* `User`: maps to Google user id, email, company, and internal role.
+* `Location`: name, timezone, optional metadata.
+* `Room`: belongs to a location, has capacity, features, and Google resource ID.
+* `Booking`: links to room, host, time range, Google event id, status, source, and check-in data.
+* `Setting` / `Policy`: supports global and scoped overrides.
+
+When defining schemas and migrations, think for growth: multiple locations, many rooms, many domains, but still a single tenant (Good Life Group).
+
+### How Cursor should behave
+
+When generating or editing code in this repo:
+
+* Respect the existing stack and patterns. Do not introduce a new major framework unless explicitly asked.
+* Keep code strongly typed and consistent with existing models.
+* Prefer small, focused modules and functions with clear responsibilities.
+* Implement Google integration through well-isolated services or utilities, not scattered calls.
+* When adding endpoints:
+
+  * Document the input/output types.
+  * Consider validation (e.g. using zod, class-validator, or whatever the repo already uses).
+* When adding UI components:
+
+  * Follow the established design system and component patterns if they exist.
+  * Keep booking flows simple and fast to use.
+
+Feature priority when asked for “booking” or “rooms” work:
+
+1. Correct data model alignment with the concepts above.
+2. Correct interaction with Google Calendar and Directory.
+3. Clear and reliable booking behavior (no double booking, clear conflict handling).
+4. Clean admin controls and observability.
+
+When in doubt, favor:
+
+* Server truth for booking logic.
+* Google Calendar as source of truth for actual event timing and attendance.
+* Internal DB as source of truth for configuration, metadata, and analytics.
+
+---
+
+You can paste that as-is into your project instructions for Cursor. If you want, next step I can draft a thinner version tailored for a `.cursorrules` JSON/YAML format or comment header for specific files.
