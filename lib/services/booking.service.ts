@@ -191,7 +191,7 @@ export class BookingService {
       const calendarId = room.google_calendar_id || room.google_resource_id;
       
       if (calendarId) {
-        const attendees = [
+        const attendees: Array<{ email: string; resource?: boolean }> = [
           ...(request.attendee_emails || []).map(email => ({ email })),
         ];
 
