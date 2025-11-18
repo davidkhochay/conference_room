@@ -144,40 +144,41 @@ export default function AdminDashboard() {
           ) : (
             <div className="space-y-3">
               {recentBookings.map((booking) => (
-                <div key={booking.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-semibold text-gray-900">{booking.title}</h4>
-                      <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
-                        booking.status === 'confirmed' || booking.status === 'scheduled'
-                          ? 'bg-green-100 text-green-800'
-                          : booking.status === 'cancelled'
-                          ? 'bg-gray-100 text-gray-600'
-                          : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {booking.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
-                      {booking.room && (
-                        <span className="flex items-center">
-                          <DoorOpen className="w-4 h-4 mr-1" />
-                          {booking.room.name}
-                        </span>
-                      )}
-                      {booking.host && (
-                        <span className="flex items-center">
-                          <Users className="w-4 h-4 mr-1" />
-                          {booking.host.name}
-                        </span>
-                      )}
-                    </div>
+                <div key={booking.id} className="p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  {/* Title and Status Row */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <h4 className="font-bold text-gray-900 text-lg flex-1">{booking.title}</h4>
+                    <span className={`px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${
+                      booking.status === 'confirmed' || booking.status === 'scheduled'
+                        ? 'bg-green-100 text-green-800'
+                        : booking.status === 'cancelled'
+                        ? 'bg-gray-100 text-gray-600'
+                        : booking.status === 'ended'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {booking.status}
+                    </span>
                   </div>
-                  <div className="text-right text-sm text-gray-600">
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 mr-1" />
+                  
+                  {/* Details Row */}
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-600">
+                    {booking.room && (
+                      <span className="flex items-center">
+                        <DoorOpen className="w-4 h-4 mr-1.5" />
+                        {booking.room.name}
+                      </span>
+                    )}
+                    {booking.host && (
+                      <span className="flex items-center">
+                        <Users className="w-4 h-4 mr-1.5" />
+                        {booking.host.name}
+                      </span>
+                    )}
+                    <span className="flex items-center">
+                      <Clock className="w-4 h-4 mr-1.5" />
                       {formatDateTime(booking.start_time)}
-                    </div>
+                    </span>
                   </div>
                 </div>
               ))}

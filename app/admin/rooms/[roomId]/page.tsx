@@ -85,13 +85,13 @@ export default function EditRoomPage() {
           photo_url: room.photo_url || '',
           status: room.status,
           allow_walk_up_booking: room.allow_walk_up_booking,
-          features: room.features || {
-            tv: false,
-            camera: false,
-            whiteboard: false,
-            projector: false,
-            video_conference: false,
-            phone: false,
+          features: {
+            tv: room.features?.tv ?? false,
+            camera: room.features?.camera ?? false,
+            whiteboard: room.features?.whiteboard ?? false,
+            projector: room.features?.projector ?? false,
+            video_conference: room.features?.video_conference ?? false,
+            phone: room.features?.phone ?? false,
           },
         });
       } else {
