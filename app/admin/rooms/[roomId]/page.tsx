@@ -44,11 +44,7 @@ export default function EditRoomPage() {
     allow_walk_up_booking: true,
     features: {
       tv: false,
-      camera: false,
       whiteboard: false,
-      projector: false,
-      video_conference: false,
-      phone: false,
     },
   });
 
@@ -87,11 +83,7 @@ export default function EditRoomPage() {
           allow_walk_up_booking: room.allow_walk_up_booking,
           features: {
             tv: room.features?.tv ?? false,
-            camera: room.features?.camera ?? false,
             whiteboard: room.features?.whiteboard ?? false,
-            projector: room.features?.projector ?? false,
-            video_conference: room.features?.video_conference ?? false,
-            phone: room.features?.phone ?? false,
           },
         });
       } else {
@@ -177,14 +169,14 @@ export default function EditRoomPage() {
     <div>
       <div className="mb-8">
         <Link href="/admin/rooms">
-          <Button variant="secondary" size="sm">
+          <button className="inline-flex items-center px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium shadow-sm transition-all">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Rooms
-          </Button>
+          </button>
         </Link>
       </div>
 
-      <div className="max-w-2xl">
+      <div className="max-w-5xl">
         <Card title="Edit Room">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -193,101 +185,116 @@ export default function EditRoomPage() {
               </div>
             )}
 
-            <Input
-              label="Room Name"
-              placeholder="e.g., Conference Room A"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="font-medium"
-              required
-            />
+            {/* Main fields in two columns on desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Left column: name, location, features, capacity */}
+              <div className="space-y-4">
+                <Input
+                  label="Room Name"
+                  placeholder="e.g., Conference Room A"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="font-medium"
+                  required
+                />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Location *
-              </label>
-              <select
-                value={formData.location_id}
-                onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
-                required
-              >
-                <option value="" className="text-gray-500">Select a location</option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id} className="text-gray-900">
-                    {location.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <Input
-              label="Capacity"
-              type="number"
-              min="1"
-              max="100"
-              value={formData.capacity}
-              onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
-              className="font-medium"
-              required
-            />
-
-            <ImageUpload
-              label="Room Photo (optional)"
-              value={formData.photo_url}
-              onChange={(url) => setFormData({ ...formData, photo_url: url })}
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
-              >
-                <option value="active">Active</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="disabled">Disabled</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">Features</label>
-              <div className="grid grid-cols-2 gap-3">
-                {Object.entries(formData.features).map(([feature, enabled]) => (
-                  <label
-                    key={feature}
-                    className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={() => toggleFeature(feature)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 capitalize">
-                      {feature.replace('_', ' ')}
-                    </span>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location *
                   </label>
-                ))}
-              </div>
-            </div>
+                  <select
+                    value={formData.location_id}
+                    onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
+                    required
+                  >
+                    <option value="" className="text-gray-500">Select a location</option>
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id} className="text-gray-900">
+                        {location.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
-              <input
-                type="checkbox"
-                id="walk_up"
-                checked={formData.allow_walk_up_booking}
-                onChange={(e) =>
-                  setFormData({ ...formData, allow_walk_up_booking: e.target.checked })
-                }
-                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-              />
-              <label htmlFor="walk_up" className="text-sm text-gray-700 cursor-pointer">
-                Allow walk-up bookings (tablet quick booking)
-              </label>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">Features</label>
+                  <div className="grid grid-cols-1 gap-3">
+                    <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.features.tv}
+                        onChange={() => toggleFeature('tv')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        TV / Screen Mirroring
+                      </span>
+                    </label>
+                    <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.features.whiteboard}
+                        onChange={() => toggleFeature('whiteboard')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Whiteboard
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                <Input
+                  label="Capacity"
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={formData.capacity}
+                  onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
+                  className="font-medium"
+                  required
+                />
+              </div>
+
+              {/* Right column: status, photo, allow walk-up */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
+                  >
+                    <option value="active">Active</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="disabled">Disabled</option>
+                  </select>
+                </div>
+
+                <ImageUpload
+                  label="Room Photo (optional)"
+                  value={formData.photo_url}
+                  onChange={(url) => setFormData({ ...formData, photo_url: url })}
+                />
+
+                <div className="flex items-center space-x-3 p-4 bg-gray-50 rounded-lg">
+                  <input
+                    type="checkbox"
+                    id="walk_up"
+                    checked={formData.allow_walk_up_booking}
+                    onChange={(e) =>
+                      setFormData({ ...formData, allow_walk_up_booking: e.target.checked })
+                    }
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="walk_up" className="text-sm text-gray-700 cursor-pointer">
+                    Allow walk-up bookings (tablet quick booking)
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-3 pt-4">

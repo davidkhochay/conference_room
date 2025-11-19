@@ -24,3 +24,23 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Tablet-specific button typography (Fredoka) */
+.tablet-btn {
+  font-family: var(--font-fredoka), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 400; /* Regular weight; use Tailwind font-bold on elements that should be bold */
+  letter-spacing: 0.01em;
+}
+
+.tablet-btn-lg {
+  font-size: 1.5rem; /* ~text-2xl */
+}
+
+.tablet-btn-xl {
+  font-size: 1.75rem; /* between 2xl and 3xl */
+}
+
+/* Tablet drop shadow: X 0, Y 4, Blur 10, Color #000000 at 25% */
+.tablet-shadow {
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.25);
+}

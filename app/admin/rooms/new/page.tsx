@@ -29,11 +29,7 @@ export default function NewRoomPage() {
     allow_walk_up_booking: true,
     features: {
       tv: false,
-      camera: false,
       whiteboard: false,
-      projector: false,
-      video_conference: false,
-      phone: false,
     },
   });
 
@@ -149,14 +145,14 @@ export default function NewRoomPage() {
     <div>
       <div className="mb-8">
         <Link href="/admin/rooms">
-          <Button variant="secondary" size="sm">
+          <button className="inline-flex items-center px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium shadow-sm transition-all">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Rooms
-          </Button>
+          </button>
         </Link>
       </div>
 
-      <div className="max-w-2xl">
+      <div className="max-w-5xl">
         <Card title="Create New Room">
           <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
@@ -165,70 +161,81 @@ export default function NewRoomPage() {
               </div>
             )}
 
-            <Input
-              label="Room Name"
-              placeholder="e.g., Conference Room A"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="font-medium"
-              required
-            />
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Location *
-              </label>
-              <select
-                value={formData.location_id}
-                onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
+            {/* Main fields side-by-side on desktop */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Input
+                label="Room Name"
+                placeholder="e.g., Conference Room A"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="font-medium"
                 required
-              >
-                <option value="" className="text-gray-500">Select a location</option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id} className="text-gray-900">
-                    {location.name}
-                  </option>
-                ))}
-              </select>
+              />
+
+              <Input
+                label="Capacity"
+                type="number"
+                min="1"
+                max="100"
+                value={formData.capacity}
+                onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
+                className="font-medium"
+                required
+              />
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location *
+                </label>
+                <select
+                  value={formData.location_id}
+                  onChange={(e) => setFormData({ ...formData, location_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-medium"
+                  required
+                >
+                  <option value="" className="text-gray-500">Select a location</option>
+                  {locations.map((location) => (
+                    <option key={location.id} value={location.id} className="text-gray-900">
+                      {location.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <ImageUpload
+                  label="Room Photo (optional)"
+                  value={formData.photo_url}
+                  onChange={(url) => setFormData({ ...formData, photo_url: url })}
+                />
+              </div>
             </div>
-
-            <Input
-              label="Capacity"
-              type="number"
-              min="1"
-              max="100"
-              value={formData.capacity}
-              onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
-              className="font-medium"
-              required
-            />
-
-            <ImageUpload
-              label="Room Photo (optional)"
-              value={formData.photo_url}
-              onChange={(url) => setFormData({ ...formData, photo_url: url })}
-            />
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-3">Features</label>
               <div className="grid grid-cols-2 gap-3">
-                {Object.entries(formData.features).map(([feature, enabled]) => (
-                  <label
-                    key={feature}
-                    className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      onChange={() => toggleFeature(feature)}
-                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700 capitalize">
-                      {feature.replace('_', ' ')}
-                    </span>
-                  </label>
-                ))}
+                <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.features.tv}
+                    onChange={() => toggleFeature('tv')}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    TV / Screen Mirroring
+                  </span>
+                </label>
+                <label className="flex items-center space-x-3 p-3 border border-gray-300 rounded-md hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.features.whiteboard}
+                    onChange={() => toggleFeature('whiteboard')}
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Whiteboard
+                  </span>
+                </label>
               </div>
             </div>
 

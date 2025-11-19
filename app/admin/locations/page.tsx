@@ -168,6 +168,11 @@ export default function LocationsPage() {
                     )}
                   </div>
                 </div>
+                <Link href={`/admin/locations/${location.id}`}>
+                  <Button variant="secondary" size="sm">
+                    Edit
+                  </Button>
+                </Link>
               </div>
 
               <div className="mt-4 pt-4 border-t border-gray-200">

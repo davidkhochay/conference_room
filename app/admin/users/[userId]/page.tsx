@@ -138,10 +138,10 @@ export default function EditUserPage() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex h-16 items-center">
             <Link href="/admin/users">
-              <Button variant="secondary" size="sm">
+              <button className="inline-flex items-center px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 text-sm font-medium shadow-sm transition-all">
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
+                Back to Users
+              </button>
             </Link>
           </div>
         </div>

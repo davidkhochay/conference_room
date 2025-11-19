@@ -177,8 +177,8 @@ export default function CompaniesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {companies.map((company) => (
-            <Card key={company.id}>
-              <div className="flex items-start">
+          <Card key={company.id}>
+              <div className="flex items-start justify-between">
                 <div className="p-3 bg-purple-100 rounded-lg mr-4">
                   <Building2 className="w-6 h-6 text-purple-600" />
                 </div>
@@ -212,6 +212,11 @@ export default function CompaniesPage() {
                     )}
                   </div>
                 </div>
+                <Link href={`/admin/companies/${company.id}`}>
+                  <Button variant="secondary" size="sm">
+                    Edit
+                  </Button>
+                </Link>
               </div>
             </Card>
           ))}

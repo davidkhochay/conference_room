@@ -26,25 +26,42 @@ export async function GET(
 
     const now = new Date();
 
-    // Get current booking
-    const { data: currentBooking } = await supabase
+    // Prefer any in-progress booking (checked-in) as the current booking,
+    // regardless of its original start time.
+    const { data: inProgressBooking, error: inProgressError } = await supabase
       .from('bookings')
       .select('*, host:users(name)')
       .eq('room_id', roomId)
-      .lte('start_time', now.toISOString())
-      .gte('end_time', now.toISOString())
-      .in('status', ['scheduled', 'in_progress'])
+      .eq('status', 'in_progress')
       .order('start_time', { ascending: true })
       .limit(1)
-      .single();
+      .maybeSingle();
 
-    // Get upcoming bookings (next 5)
+    let currentBooking = inProgressBooking || null;
+
+    // If nothing is in-progress, fall back to time-window based current booking
+    if (!currentBooking && !inProgressError) {
+      const { data: timedBooking } = await supabase
+        .from('bookings')
+        .select('*, host:users(name)')
+        .eq('room_id', roomId)
+        .lte('start_time', now.toISOString())
+        .gte('end_time', now.toISOString())
+        .in('status', ['scheduled'])
+        .order('start_time', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      currentBooking = timedBooking || null;
+    }
+
+    // Get upcoming bookings (next 5) – scheduled only, exclude current
     const { data: upcomingBookings } = await supabase
       .from('bookings')
       .select('*, host:users(name)')
       .eq('room_id', roomId)
       .gt('start_time', now.toISOString())
-      .in('status', ['scheduled', 'in_progress'])
+      .eq('status', 'scheduled')
       .order('start_time', { ascending: true })
       .limit(5);
 
@@ -62,6 +79,10 @@ export async function GET(
       location_name: room.location.name,
       photo_url: room.photo_url,
       capacity: room.capacity,
+      features: {
+        tv: room.features?.tv ?? false,
+        whiteboard: room.features?.whiteboard ?? false,
+      },
       is_occupied: isOccupied,
       current_booking: currentBooking
         ? {

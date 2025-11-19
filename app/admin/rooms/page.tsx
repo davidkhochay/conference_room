@@ -88,9 +88,12 @@ export default function RoomsPage() {
           </div>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
           {rooms.map((room) => (
-            <div key={room.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden hover:shadow-xl transition-shadow">
+            <div
+              key={room.id}
+              className="bg-white rounded-3xl tablet-shadow border border-gray-100 overflow-hidden hover:translate-y-0.5 transition-transform"
+            >
               {/* Room Photo Background */}
               <div className="relative h-48 overflow-hidden">
                 {room.photo_url ? (
@@ -128,58 +131,62 @@ export default function RoomsPage() {
                     {room.location.name}
                   </p>
                 </div>
+
+                {/* QR Code button (bottom-right on image) */}
+                <Link
+                  href={`/admin/rooms/${room.id}/qr`}
+                  className="absolute bottom-3 right-3"
+                >
+                  <button className="w-10 h-10 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow-md hover:bg-white transition">
+                    <QrCode className="w-4 h-4" />
+                  </button>
+                </Link>
               </div>
 
               {/* Room Info Section */}
-              <div className="p-4">
-                <div className="mb-3">
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
                   <p className="text-sm text-gray-600 flex items-center">
                     <Users className="w-4 h-4 mr-1 text-gray-500" />
                     <span className="font-medium text-gray-900">{room.capacity} people</span>
                   </p>
+                  <span className="text-xs uppercase tracking-wide text-gray-400">
+                    {room.status}
+                  </span>
                 </div>
 
-                {/* Features */}
-                <div className="mb-4">
-                  <div className="flex flex-wrap gap-2">
-                    {Object.entries(room.features || {})
-                      .filter(([, enabled]) => enabled)
-                      .slice(0, 4)
-                      .map(([feature]) => (
-                        <span
-                          key={feature}
-                          className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded-full font-medium"
-                        >
-                          {feature.replace('_', ' ')}
-                        </span>
-                      ))}
-                    {Object.entries(room.features || {}).filter(([, enabled]) => enabled).length > 4 && (
-                      <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full font-medium">
-                        +{Object.entries(room.features || {}).filter(([, enabled]) => enabled).length - 4} more
-                      </span>
-                    )}
-                  </div>
+                {/* Features (tv / whiteboard only) */}
+                <div className="flex flex-wrap gap-2">
+                  {room.features?.tv && (
+                    <span className="px-3 py-1 text-xs rounded-full bg-gray-100 text-gray-800 flex items-center gap-1">
+                      <span className="inline-block w-3 h-3 rounded-sm bg-gray-700" />
+                      tv
+                    </span>
+                  )}
+                  {room.features?.whiteboard && (
+                    <span className="px-3 py-1 text-xs rounded-full bg-gray-100 text-gray-800 flex items-center gap-1">
+                      <span className="inline-block w-3 h-3 rounded-sm border border-gray-700" />
+                      whiteboard
+                    </span>
+                  )}
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2">
+                <div className="flex gap-2 pt-2">
                   <Link href={`/admin/rooms/${room.id}`} className="flex-1">
                     <Button variant="secondary" size="sm" className="w-full">
                       <Pencil className="w-3 h-3 mr-1 inline" />
                       Edit
                     </Button>
                   </Link>
-                  <Link href={`/admin/rooms/${room.id}/qr`}>
-                    <Button variant="secondary" size="sm">
-                      <QrCode className="w-3 h-3" />
-                    </Button>
-                  </Link>
                   <Button
                     variant="danger"
                     size="sm"
+                    className="flex-1"
                     onClick={() => handleDelete(room.id)}
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Trash2 className="w-3 h-3 mr-1 inline" />
+                    Delete
                   </Button>
                 </div>
               </div>

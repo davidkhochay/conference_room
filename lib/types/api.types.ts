@@ -56,6 +56,10 @@ export type RoomStatusResponse = {
   location_name: string;
   photo_url: string | null;
   capacity: number;
+  features?: {
+    tv: boolean;
+    whiteboard: boolean;
+  };
   is_occupied: boolean;
   current_booking: {
     id: string;

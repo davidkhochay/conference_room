@@ -3,7 +3,15 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
-import { Users, Clock, CheckCircle, XCircle } from 'lucide-react';
+import {
+  ArrowLeft,
+  Calendar,
+  MapPin,
+  Users,
+  Clock,
+  CheckCircle,
+  XCircle,
+} from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 
@@ -11,7 +19,9 @@ interface Booking {
   id: string;
   start_time: string;
   end_time: string;
-  status: string;
+  status?: string;
+  title?: string;
+  host_name?: string | null;
 }
 
 interface Room {
@@ -28,15 +38,18 @@ interface Room {
 
 interface RoomWithAvailability extends Room {
   availability: {
+    state: 'available' | 'busy' | 'starting_soon';
     isAvailableNow: boolean;
     availableUntil: string | null;
     currentBooking: Booking | null;
+    nextBookingStart: string | null;
   };
 }
 
 export default function BookingPage() {
   const [rooms, setRooms] = useState<RoomWithAvailability[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedLocation, setSelectedLocation] = useState<string>('all');
 
   useEffect(() => {
     fetchData();
@@ -66,47 +79,71 @@ export default function BookingPage() {
 
   const checkRoomAvailability = async (roomId: string) => {
     try {
-      const now = new Date();
-      const endOfDay = new Date(now);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const response = await fetch(
-        `/api/bookings?room_id=${roomId}&start_date=${now.toISOString()}&end_date=${endOfDay.toISOString()}`
-      );
-      
+      const response = await fetch(`/api/rooms/${roomId}/status`);
       const result = await response.json();
-      
-      if (result.success) {
-        const activeBookings = result.data
-          .filter((b: Booking) => b.status === 'scheduled' || b.status === 'confirmed')
-          .sort((a: Booking, b: Booking) => 
-            new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-          );
 
-        // Check if room is currently booked
-        const currentBooking = activeBookings.find((b: Booking) => {
-          const start = new Date(b.start_time);
-          const end = new Date(b.end_time);
-          return now >= start && now < end;
-        });
+      if (response.ok && result.success && result.data) {
+        const status = result.data;
+        const now = new Date();
 
-        if (currentBooking) {
+        const next = status.next_bookings && status.next_bookings.length > 0
+          ? status.next_bookings[0]
+          : null;
+
+        // Check-in / starting soon window (same logic as tablet)
+        let isStartingSoon = false;
+        if (!status.current_booking && next) {
+          const startTime = new Date(next.start_time);
+          const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
+          if (diffMinutes >= -10 && diffMinutes <= 10) {
+            isStartingSoon = true;
+          }
+        }
+
+        // Build current booking if occupied
+        const currentBooking: Booking | null = status.current_booking
+          ? {
+              id: status.current_booking.id,
+              start_time: status.current_booking.start_time,
+              end_time: status.current_booking.end_time,
+              title: status.current_booking.title,
+              host_name: status.current_booking.host_name,
+            }
+          : null;
+
+        if (status.is_occupied) {
           return {
+            state: 'busy',
             isAvailableNow: false,
             availableUntil: null,
             currentBooking,
+            nextBookingStart: next ? next.start_time : null,
           };
         }
 
-        // Find next booking
-        const nextBooking = activeBookings.find((b: Booking) => 
-          new Date(b.start_time) > now
-        );
+        if (isStartingSoon && next) {
+          return {
+            state: 'starting_soon',
+            isAvailableNow: false,
+            availableUntil: null,
+            currentBooking: {
+              id: next.id,
+              start_time: next.start_time,
+              end_time: next.end_time,
+              title: next.title,
+              host_name: next.host_name,
+            },
+            nextBookingStart: next.start_time,
+          };
+        }
 
+        // Available state
         return {
+          state: 'available',
           isAvailableNow: true,
-          availableUntil: nextBooking ? nextBooking.start_time : null,
+          availableUntil: status.available_until,
           currentBooking: null,
+          nextBookingStart: next ? next.start_time : null,
         };
       }
     } catch (error) {
@@ -114,145 +151,253 @@ export default function BookingPage() {
     }
 
     return {
+      state: 'available',
       isAvailableNow: true,
       availableUntil: null,
       currentBooking: null,
+      nextBookingStart: null,
     };
   };
 
+  const locations = Array.from(new Set(rooms.map((room) => room.location.name)));
+  const filteredRooms =
+    selectedLocation === 'all'
+      ? rooms
+      : rooms.filter((room) => room.location.name === selectedLocation);
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
-            <Link href="/" className="text-2xl font-bold text-gray-900 hover:text-blue-600 transition-colors">
-              Good Life Rooms
-            </Link>
-            <div className="flex items-center gap-3">
-              <Link href="/">
-                <Button variant="secondary" size="sm">
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                  Home
-                </Button>
-              </Link>
-            </div>
+    <div className="min-h-screen bg-[#F7F3EC]">
+      {/* Header */}
+      <div className="max-w-5xl mx-auto px-6 pt-12 pb-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm uppercase tracking-[0.2em] text-gray-400 mb-2">
+              Booking
+            </p>
+            <h1 className="text-3xl md:text-4xl font-semibold text-gray-900 mb-2">
+              Find a room
+            </h1>
+            <p className="text-gray-600 text-sm md:text-base">
+              Browse rooms across locations and see what’s free right now.
+            </p>
+          </div>
+          <Link href="/">
+            <button className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" />
+              Home
+            </button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Location Filter */}
+      {locations.length > 1 && (
+        <div className="max-w-5xl mx-auto px-6 pb-4">
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setSelectedLocation('all')}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                selectedLocation === 'all'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              All locations ({rooms.length})
+            </button>
+            {locations.map((location) => (
+              <button
+                key={location}
+                type="button"
+                onClick={() => setSelectedLocation(location)}
+                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                  selectedLocation === location
+                    ? 'bg-gray-900 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                {location} (
+                {rooms.filter((room) => room.location.name === location).length})
+              </button>
+            ))}
           </div>
         </div>
-      </nav>
+      )}
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-        <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900">Book Your Room</h2>
-          <p className="mt-2 text-gray-600">Browse available conference rooms across all locations</p>
-        </div>
-
-        {/* Rooms Grid */}
+      {/* Rooms */}
+      <div className="max-w-5xl mx-auto px-6 pb-16">
         {loading ? (
           <Card>
-            <div className="text-center py-8 text-gray-600">Loading rooms...</div>
+            <div className="text-center py-10 text-gray-600 text-base">
+              Loading rooms…
+            </div>
           </Card>
         ) : rooms.length === 0 ? (
           <Card>
-            <div className="text-center py-8">
-              <p className="text-gray-600">No rooms available</p>
+            <div className="text-center py-10">
+              <p className="text-gray-700 text-base">No rooms available</p>
+            </div>
+          </Card>
+        ) : filteredRooms.length === 0 ? (
+          <Card>
+            <div className="text-center py-10">
+              <p className="text-gray-700 text-base">
+                No rooms in this location yet.
+              </p>
             </div>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms.map((room) => (
-              <div key={room.id} className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden hover:shadow-xl transition-shadow">
-                <div className="relative h-48 overflow-hidden">
-                  {room.photo_url ? (
-                    <img
-                      src={room.photo_url}
-                      alt={room.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500" />
-                  )}
-                  {/* Gradient Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
-                  
-                  {/* Room Name Overlay */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 text-white">
-                    <h3 className="text-2xl font-bold drop-shadow-lg">{room.name}</h3>
-                    <p className="text-white/90 drop-shadow-md">{room.location.name}</p>
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredRooms.map((room) => {
+              const isAvailable = room.availability.state === 'available';
+              const isBusy = room.availability.state === 'busy';
+              const isStartingSoon = room.availability.state === 'starting_soon';
 
-                <div className="p-6">
-                  <div className="space-y-3">
-                    {/* Availability Status */}
-                    <div className={`flex items-center font-semibold text-sm ${
-                      room.availability.isAvailableNow ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {room.availability.isAvailableNow ? (
-                        <>
-                          <CheckCircle className="w-5 h-5 mr-2" />
-                          <span>
-                            Available now
-                            {room.availability.availableUntil && (
-                              <span className="text-gray-600 font-normal">
-                                {' '}until {format(new Date(room.availability.availableUntil), 'h:mm a')}
-                              </span>
-                            )}
-                          </span>
-                        </>
+              const statusChipClasses = isAvailable
+                ? 'bg-[#E6F9EE] text-[#166534]'
+                : isBusy
+                ? 'bg-[#FEE2E2] text-[#991B1B]'
+                : 'bg-[#FEF3C7] text-[#92400E]';
+
+              return (
+                <Link
+                  key={room.id}
+                  href={`/book/room/${room.id}`}
+                  className="group"
+                >
+                  <div className="bg-white rounded-3xl tablet-shadow overflow-hidden hover:translate-y-0.5 transition-transform">
+                    {/* Photo */}
+                    <div className="relative h-40 overflow-hidden">
+                      {room.photo_url ? (
+                        <img
+                          src={room.photo_url}
+                          alt={room.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
                       ) : (
-                        <>
-                          <XCircle className="w-5 h-5 mr-2" />
-                          <span>
-                            Busy
-                            {room.availability.currentBooking && (
-                              <span className="text-gray-600 font-normal">
-                                {' '}until {format(new Date(room.availability.currentBooking.end_time), 'h:mm a')}
-                              </span>
+                        <div className="w-full h-full bg-gray-200" />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+
+                      {/* Name + status */}
+                      <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col gap-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <h3 className="text-2xl font-semibold text-white drop-shadow-lg">
+                            {room.name}
+                          </h3>
+                          <span
+                            className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium tablet-shadow ${statusChipClasses}`}
+                          >
+                            {isAvailable && (
+                              <>
+                                <CheckCircle className="w-4 h-4" />
+                                <span>Available</span>
+                              </>
+                            )}
+                            {isBusy && (
+                              <>
+                                <XCircle className="w-4 h-4" />
+                                <span>In use</span>
+                              </>
+                            )}
+                            {isStartingSoon && (
+                              <>
+                                <Clock className="w-4 h-4" />
+                                <span>Starting soon</span>
+                              </>
                             )}
                           </span>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="flex items-center text-gray-600">
-                      <Users className="w-5 h-5 mr-2" />
-                      <span>Capacity: {room.capacity} people</span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(room.features || {})
-                        .filter(([, enabled]) => enabled)
-                        .slice(0, 3)
-                        .map(([feature]) => (
-                          <span
-                            key={feature}
-                            className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded-full"
-                          >
-                            {feature}
+                        </div>
+                        <div className="flex items-center text-white/90 text-xs">
+                          <MapPin className="w-4 h-4 mr-1" />
+                          <span className="font-medium">
+                            {room.location.name}
                           </span>
-                        ))}
-                      {Object.entries(room.features || {}).filter(([, enabled]) => enabled).length > 3 && (
-                        <span className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded-full">
-                          +{Object.entries(room.features || {}).filter(([, enabled]) => enabled).length - 3}
-                        </span>
-                      )}
+                        </div>
+                      </div>
                     </div>
 
-                    <Link href={`/book/room/${room.id}`} className="block mt-4">
-                      <Button className="w-full">
-                        <Clock className="w-4 h-4 mr-2 inline" />
-                        Book This Room
-                      </Button>
-                    </Link>
+                    {/* Details */}
+                    <div className="p-5 space-y-3">
+                      <div className="flex items-center text-gray-700 text-sm">
+                        <Users className="w-4 h-4 mr-2 text-gray-500" />
+                        <span className="font-medium">
+                          {room.capacity} people
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {room.features?.tv && (
+                          <span className="px-3 py-1 rounded-full bg-[#E3F2FF] text-[#2563EB] font-medium">
+                            TV
+                          </span>
+                        )}
+                        {room.features?.whiteboard && (
+                          <span className="px-3 py-1 rounded-full bg-[#E6F9EE] text-[#166534] font-medium">
+                            Whiteboard
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Availability snippet */}
+                      <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        {isAvailable && room.availability.availableUntil && (
+                          <span>
+                            Free until{' '}
+                            {format(
+                              new Date(room.availability.availableUntil),
+                              'h:mm a'
+                            )}
+                          </span>
+                        )}
+                        {isBusy &&
+                          room.availability.currentBooking &&
+                          room.availability.currentBooking.end_time && (
+                            <span>
+                              Busy until{' '}
+                              {format(
+                                new Date(
+                                  room.availability.currentBooking.end_time
+                                ),
+                                'h:mm a'
+                              )}
+                            </span>
+                          )}
+                        {isStartingSoon &&
+                          room.availability.currentBooking &&
+                          room.availability.currentBooking.start_time && (
+                            <span>
+                              Starts at{' '}
+                              {format(
+                                new Date(
+                                  room.availability.currentBooking.start_time
+                                ),
+                                'h:mm a'
+                              )}
+                            </span>
+                          )}
+                        {!room.availability.availableUntil &&
+                          !room.availability.currentBooking && (
+                            <span>See details</span>
+                          )}
+                      </div>
+
+                      {/* CTA */}
+                      <div className="pt-3">
+                        <div className="flex items-center justify-between rounded-full px-4 py-3 bg-gray-900 text-white text-sm font-medium">
+                          <span>Book this room</span>
+                          <Clock className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
