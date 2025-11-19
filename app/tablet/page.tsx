@@ -20,6 +20,7 @@ export default function TabletRoomSelector() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [deviceType, setDeviceType] = useState<'computer' | 'ipad' | 'amazon'>('ipad');
 
   useEffect(() => {
     fetchRooms();
@@ -80,6 +81,28 @@ export default function TabletRoomSelector() {
         </div>
       </div>
 
+      {/* Device selector */}
+      <div className="max-w-5xl mx-auto px-6 pb-4">
+        <div className="inline-flex items-center gap-2 bg-white/80 rounded-full px-2 py-1 tablet-shadow">
+          {[
+            { id: 'computer', label: 'Computer' },
+            { id: 'ipad', label: 'iPad' },
+            { id: 'amazon', label: 'Amazon tablet' },
+          ].map((device) => (
+            <button
+              key={device.id}
+              type="button"
+              onClick={() => setDeviceType(device.id as 'computer' | 'ipad' | 'amazon')}
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                deviceType === device.id ? 'bg-gray-900 text-white' : 'text-gray-700'
+              }`}
+            >
+              {device.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Location Filter */}
       {locations.length > 1 && (
         <div className="max-w-5xl mx-auto px-6 pb-4">
@@ -122,7 +145,7 @@ export default function TabletRoomSelector() {
             {filteredRooms.map(room => (
               <Link
                 key={room.id}
-                href={`/tablet/${room.id}`}
+                href={`/tablet/${room.id}?device=${deviceType}`}
                 className="group"
               >
                 <div className="bg-white rounded-3xl tablet-shadow overflow-hidden hover:translate-y-0.5 transition-transform">

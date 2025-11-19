@@ -27,7 +27,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[#F7F3EC]">
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
@@ -126,7 +126,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </nav>
 
       <main className="py-10">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">{children}</div>
+        <div className="mx-auto max-w-6xl px-6 sm:px-6 lg:px-8">{children}</div>
       </main>
     </div>
   );

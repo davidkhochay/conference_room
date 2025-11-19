@@ -181,13 +181,13 @@ export default function BookingPage() {
               Browse rooms across locations and see what’s free right now.
             </p>
           </div>
-          <Link href="/">
+              <Link href="/">
             <button className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
               <ArrowLeft className="w-4 h-4" />
-              Home
+                  Home
             </button>
-          </Link>
-        </div>
+              </Link>
+            </div>
       </div>
 
       {/* Location Filter */}
@@ -268,17 +268,17 @@ export default function BookingPage() {
                   <div className="bg-white rounded-3xl tablet-shadow overflow-hidden hover:translate-y-0.5 transition-transform">
                     {/* Photo */}
                     <div className="relative h-40 overflow-hidden">
-                      {room.photo_url ? (
-                        <img
-                          src={room.photo_url}
-                          alt={room.name}
+                  {room.photo_url ? (
+                    <img
+                      src={room.photo_url}
+                      alt={room.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
+                    />
+                  ) : (
                         <div className="w-full h-full bg-gray-200" />
-                      )}
+                  )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-
+                  
                       {/* Name + status */}
                       <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col gap-2">
                         <div className="flex items-center justify-between gap-2">
@@ -314,8 +314,8 @@ export default function BookingPage() {
                             {room.location.name}
                           </span>
                         </div>
-                      </div>
-                    </div>
+                  </div>
+                </div>
 
                     {/* Details */}
                     <div className="p-5 space-y-3">
@@ -350,11 +350,11 @@ export default function BookingPage() {
                               'h:mm a'
                             )}
                           </span>
-                        )}
+                      )}
                         {isBusy &&
                           room.availability.currentBooking &&
                           room.availability.currentBooking.end_time && (
-                            <span>
+                          <span>
                               Busy until{' '}
                               {format(
                                 new Date(
@@ -363,7 +363,7 @@ export default function BookingPage() {
                                 'h:mm a'
                               )}
                             </span>
-                          )}
+                      )}
                         {isStartingSoon &&
                           room.availability.currentBooking &&
                           room.availability.currentBooking.start_time && (
@@ -380,8 +380,8 @@ export default function BookingPage() {
                         {!room.availability.availableUntil &&
                           !room.availability.currentBooking && (
                             <span>See details</span>
-                          )}
-                      </div>
+                        )}
+                    </div>
 
                       {/* CTA */}
                       <div className="pt-3">
@@ -389,7 +389,7 @@ export default function BookingPage() {
                           <span>Book this room</span>
                           <Clock className="w-4 h-4" />
                         </div>
-                      </div>
+                    </div>
                     </div>
                   </div>
                 </Link>

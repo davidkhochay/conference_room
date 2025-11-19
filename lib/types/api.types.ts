@@ -42,6 +42,15 @@ export const CreateRoomSchema = z.object({
   features: z.record(z.boolean()).optional(),
   allow_walk_up_booking: z.boolean().default(true),
   max_booking_duration_minutes: z.number().int().positive().optional(),
+  floor_id: z.string().uuid().optional(),
+  map_position: z.object({
+    x: z.number().optional(),
+    y: z.number().optional(),
+    width: z.number().optional(),
+    height: z.number().optional(),
+    points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+    type: z.enum(['rect', 'polygon']).optional(),
+  }).optional(),
 });
 
 export type CreateRoomRequest = z.infer<typeof CreateRoomSchema>;

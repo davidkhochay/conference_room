@@ -28,7 +28,7 @@ export async function GET(
 
     // Prefer any in-progress booking (checked-in) as the current booking,
     // regardless of its original start time.
-    const { data: inProgressBooking, error: inProgressError } = await supabase
+    const { data: inProgressBooking } = await supabase
       .from('bookings')
       .select('*, host:users(name)')
       .eq('room_id', roomId)
@@ -37,33 +37,41 @@ export async function GET(
       .limit(1)
       .maybeSingle();
 
-    let currentBooking = inProgressBooking || null;
+    const currentBooking = inProgressBooking || null;
 
-    // If nothing is in-progress, fall back to time-window based current booking
-    if (!currentBooking && !inProgressError) {
-      const { data: timedBooking } = await supabase
-        .from('bookings')
-        .select('*, host:users(name)')
-        .eq('room_id', roomId)
-        .lte('start_time', now.toISOString())
-        .gte('end_time', now.toISOString())
-        .in('status', ['scheduled'])
-        .order('start_time', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+    // Get upcoming scheduled bookings, including ones that started within the last 15 minutes
+    const graceMinutes = 10;
+    const windowStart = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
 
-      currentBooking = timedBooking || null;
-    }
-
-    // Get upcoming bookings (next 5) – scheduled only, exclude current
-    const { data: upcomingBookings } = await supabase
+    const { data: scheduledBookings } = await supabase
       .from('bookings')
       .select('*, host:users(name)')
       .eq('room_id', roomId)
-      .gt('start_time', now.toISOString())
       .eq('status', 'scheduled')
-      .order('start_time', { ascending: true })
-      .limit(5);
+      .gte('start_time', windowStart)
+      .order('start_time', { ascending: true });
+
+    let upcomingBookings = scheduledBookings || [];
+
+    // Auto-cancel the first scheduled booking if it's more than 10 minutes past its start time
+    if (upcomingBookings.length > 0) {
+      const first = upcomingBookings[0];
+      const startTime = new Date(first.start_time);
+      const diffMinutes = (now.getTime() - startTime.getTime()) / (1000 * 60);
+
+      if (diffMinutes > graceMinutes) {
+        try {
+          await supabase
+            .from('bookings')
+            .update({ status: 'cancelled' })
+            .eq('id', first.id);
+        } catch (e) {
+          console.error('Failed to auto-cancel stale booking', e);
+        }
+        // Remove it from upcoming list
+        upcomingBookings = upcomingBookings.slice(1);
+      }
+    }
 
     const isOccupied = !!currentBooking;
     let availableUntil: string | null = null;

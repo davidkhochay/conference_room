@@ -7,6 +7,8 @@ import { Input } from '@/lib/components/ui/Input';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
+import FloorPlanEditor from '@/lib/components/admin/FloorPlanEditor';
+import { Floor, Room } from '@/lib/types/database.types';
 
 interface Location {
   id: string;
@@ -20,7 +22,11 @@ export default function EditLocationPage() {
   const router = useRouter();
   const locationId = params?.locationId as string;
 
+  const [activeTab, setActiveTab] = useState<'details' | 'floorplan'>('details');
   const [location, setLocation] = useState<Location | null>(null);
+  const [floors, setFloors] = useState<Floor[]>([]);
+  const [rooms, setRooms] = useState<Room[]>([]);
+  
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -34,8 +40,13 @@ export default function EditLocationPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        console.log('Loading location data for:', locationId);
+        
+        // Load Location
         const res = await fetch(`/api/admin/locations/${locationId}`);
         const result = await res.json();
+        console.log('Location result:', result);
+        
         if (result.success) {
           setLocation(result.data);
           setFormData({
@@ -45,9 +56,24 @@ export default function EditLocationPage() {
           });
         } else {
           setError(result.error?.message || 'Location not found');
+          return;
         }
+
+        // Load Floors
+        const floorsRes = await fetch(`/api/admin/locations/${locationId}/floors`);
+        const floorsData = await floorsRes.json();
+        console.log('Floors result:', floorsData);
+        if (floorsData.success) setFloors(floorsData.data);
+
+        // Load Rooms
+        const roomsRes = await fetch(`/api/rooms?location_id=${locationId}`);
+        const roomsData = await roomsRes.json();
+        console.log('Rooms result:', roomsData);
+        if (roomsData.success) setRooms(roomsData.data);
+
       } catch (err: any) {
-        setError(err.message || 'Failed to load location');
+        console.error('Load error:', err);
+        setError(err.message || 'Failed to load data');
       } finally {
         setLoading(false);
       }
@@ -68,7 +94,8 @@ export default function EditLocationPage() {
       });
       const result = await res.json();
       if (result.success) {
-        router.push('/admin/locations');
+        // Stay on page or go back? Usually stay to edit more.
+        alert('Location updated');
       } else {
         setError(result.error?.message || 'Failed to update location');
       }
@@ -125,8 +152,35 @@ export default function EditLocationPage() {
             Back to Locations
           </button>
         </Link>
+        <h1 className="text-2xl font-bold text-gray-900">{location.name}</h1>
       </div>
 
+      <div className="border-b border-gray-200 mb-6">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('details')}
+            className={`${
+              activeTab === 'details'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Details
+          </button>
+          <button
+            onClick={() => setActiveTab('floorplan')}
+            className={`${
+              activeTab === 'floorplan'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+          >
+            Floor Plan
+          </button>
+        </nav>
+      </div>
+
+      {activeTab === 'details' ? (
       <Card title="Edit Location">
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
@@ -155,7 +209,7 @@ export default function EditLocationPage() {
             <select
               value={formData.timezone}
               onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
             >
               <option value="America/Phoenix">America/Phoenix (MST)</option>
               <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
@@ -180,8 +234,13 @@ export default function EditLocationPage() {
           </div>
         </form>
       </Card>
+      ) : (
+        <FloorPlanEditor
+          locationId={locationId}
+          initialFloors={floors}
+          initialRooms={rooms}
+        />
+      )}
     </div>
   );
 }
-
-

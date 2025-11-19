@@ -155,41 +155,41 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
       }
     >
       {!embedded && (
-        <div className="mb-4 md:mb-6">
-          <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
-            {roomName} - Booking Calendar
-          </h3>
-          <p className="text-sm md:text-base text-gray-600">
+      <div className="mb-4 md:mb-6">
+        <h3 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">
+          {roomName} - Booking Calendar
+        </h3>
+        <p className="text-sm md:text-base text-gray-600">
             See all bookings for this day and add a new one.
-          </p>
-        </div>
+        </p>
+      </div>
       )}
 
       {/* Date navigation */}
       <div className="mb-4 pb-3 border-b border-gray-200 flex items-center justify-between gap-3">
-        <button
-          onClick={goToPreviousDay}
-          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-        >
+              <button
+                onClick={goToPreviousDay}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
           <ChevronLeft className="w-5 h-5 text-gray-700" />
-        </button>
-
+              </button>
+              
         <div className="flex-1 text-center">
-          <div className="flex items-center justify-center gap-2 mb-1">
+                <div className="flex items-center justify-center gap-2 mb-1">
             <Calendar className="w-4 h-4 text-blue-600" />
             <h2 className="text-sm md:text-base font-semibold text-gray-900">
-              {format(selectedDate, 'EEEE, MMM d, yyyy')}
-            </h2>
-          </div>
-          {!isToday(selectedDate) && (
-            <button
-              onClick={goToToday}
-              className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
-            >
+                    {format(selectedDate, 'EEEE, MMM d, yyyy')}
+                  </h2>
+                </div>
+                {!isToday(selectedDate) && (
+                  <button
+                    onClick={goToToday}
+                    className="text-xs text-blue-600 hover:text-blue-800 font-semibold"
+                  >
               Jump to today
-            </button>
-          )}
-        </div>
+                  </button>
+                )}
+              </div>
 
         <div className="flex items-center gap-2">
           {onSlotSelect && (
@@ -201,21 +201,21 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
               New booking
             </button>
           )}
-          <button
-            onClick={goToNextDay}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
+              <button
+                onClick={goToNextDay}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
             <ChevronRight className="w-5 h-5 text-gray-700" />
-          </button>
-        </div>
-      </div>
+              </button>
+            </div>
+          </div>
 
       {/* Day events */}
-      {loading ? (
+            {loading ? (
         <div className="text-center py-8 text-gray-500 text-sm">
           Loading…
         </div>
-      ) : selectedDateBookings.length === 0 ? (
+            ) : selectedDateBookings.length === 0 ? (
         <div className="text-center py-8 text-xs text-gray-500">
           No bookings for this date.
         </div>
@@ -249,7 +249,7 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
                 'bg-blue-100 text-blue-800 border border-blue-200';
             }
 
-            return (
+              return (
               <div
                 key={booking.id}
                 className="w-full rounded-xl px-3 py-2 border bg-gray-50 flex items-start justify-between gap-3"
@@ -263,36 +263,36 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
                   </div>
                   <div className="text-xs font-semibold text-gray-900">
                     {booking.title}
-                  </div>
+                        </div>
                   {booking.host && (
                     <div className="mt-0.5 flex items-center text-[11px] text-gray-600">
                       <User className="w-3 h-3 mr-1" />
                       <span>{booking.host.name}</span>
                     </div>
                   )}
-                </div>
+          </div>
                 <div className="flex flex-col items-end gap-1">
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${chipClasses}`}
-                  >
+                        >
                     {statusLabel}
-                  </span>
+                        </span>
                   {(booking.status === 'scheduled' ||
                     booking.status === 'confirmed') && (
-                    <button
-                      onClick={() => handleDeleteBooking(booking.id)}
-                      disabled={deleting === booking.id}
+                          <button
+                            onClick={() => handleDeleteBooking(booking.id)}
+                            disabled={deleting === booking.id}
                       className="p-1 text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
-                      title="Cancel booking"
-                    >
+                            title="Cancel booking"
+                          >
                       <Trash2 className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
+                          </button>
+                        )}
+                      </div>
               </div>
             );
           })}
-        </div>
+          </div>
       )}
     </div>
   );

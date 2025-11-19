@@ -48,6 +48,20 @@ export type Location = {
   updated_at: string;
 };
 
+export type Floor = {
+  id: string;
+  location_id: string;
+  name: string;
+  level: number;
+  image_url: string | null;
+  width: number;
+  height: number;
+  svg_content: string | null;
+  test_pins: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type RoomFeatures = {
   tv?: boolean;
   camera?: boolean;
@@ -62,6 +76,15 @@ export type Room = {
   id: string;
   name: string;
   location_id: string;
+  floor_id: string | null;
+  map_position: {
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    points?: Array<{x: number; y: number}>;
+    type?: 'rect' | 'polygon';
+  } | null;
   google_resource_id: string | null;
   google_calendar_id: string | null;
   capacity: number;

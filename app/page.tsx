@@ -1,10 +1,10 @@
 import Link from 'next/link';
-import { Calendar, DoorOpen, Monitor, Shield } from 'lucide-react';
+import { Calendar, DoorOpen, Monitor, Shield, Map } from 'lucide-react';
 
 export default function Home() {
   return (
     <div className="min-h-screen bg-[#F7F3EC]">
-      <div className="max-w-5xl mx-auto px-6 py-16">
+      <div className="max-w-6xl mx-auto px-6 py-16">
         {/* Header */}
         <header className="text-center mb-20">
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 mb-4">
@@ -16,9 +16,9 @@ export default function Home() {
         </header>
 
         {/* Main Actions */}
-        <main className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
           <Link href="/book">
-            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform">
+            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform h-full">
               <div className="flex flex-col gap-4">
                 <div className="w-12 h-12 rounded-full bg-[#E3F2FF] flex items-center justify-center">
                   <Calendar className="w-7 h-7 text-[#2563EB]" />
@@ -34,7 +34,7 @@ export default function Home() {
           </Link>
 
           <Link href="/tablet">
-            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform">
+            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform h-full">
               <div className="flex flex-col gap-4">
                 <div className="w-12 h-12 rounded-full bg-[#E6F9EE] flex items-center justify-center">
                   <Monitor className="w-7 h-7 text-[#34CB57]" />
@@ -48,9 +48,25 @@ export default function Home() {
               </div>
             </div>
           </Link>
+          
+          <Link href="/maps">
+            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform h-full">
+              <div className="flex flex-col gap-4">
+                <div className="w-12 h-12 rounded-full bg-[#FEF3C7] flex items-center justify-center">
+                  <Map className="w-7 h-7 text-[#D97706]" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-semibold text-gray-900 mb-1">Maps</h2>
+                  <p className="text-gray-600">
+                    Interactive floor plans to find rooms and colleagues.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Link>
 
           <Link href="/admin">
-            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform">
+            <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform h-full">
               <div className="flex flex-col gap-4">
                 <div className="w-12 h-12 rounded-full bg-[#F4E9FF] flex items-center justify-center">
                   <Shield className="w-7 h-7 text-[#7C3AED]" />

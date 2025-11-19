@@ -2,9 +2,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/lib/components/ui/Button';
-import { Calendar, Clock, User, QrCode, Users } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
+import { Calendar, Clock, User, QrCode, Users, X } from 'lucide-react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase/client';
 
 interface RoomStatus {
   room_id: string;
@@ -34,12 +35,75 @@ interface RoomStatus {
   available_until: string | null;
 }
 
+import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
+import { Floor, Room } from '@/lib/types/database.types';
+
 export default function TabletDisplay() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const roomId = params?.roomId as string;
   const router = useRouter();
 
   const [status, setStatus] = useState<RoomStatus | null>(null);
+  // ... existing state ...
+  const [showMap, setShowMap] = useState(false);
+  const [floor, setFloor] = useState<Floor | null>(null);
+  const [floorRooms, setFloorRooms] = useState<Room[]>([]);
+  const [roomStatuses, setRoomStatuses] = useState<Record<string, { roomId: string; isOccupied: boolean }>>({});
+
+  // ...
+
+  const fetchFloorData = async () => {
+    if (!status) return;
+    try {
+      // Get room details to find location_id/floor_id
+      const roomRes = await fetch(`/api/rooms/${roomId}`);
+      const roomData = await roomRes.json();
+      
+      if (roomData.success && roomData.data.floor_id) {
+        // Fetch Floor
+        const floorRes = await fetch(`/api/admin/locations/${roomData.data.location_id}/floors/${roomData.data.floor_id}`);
+        const floorResult = await floorRes.json();
+        if (floorResult.success) {
+          setFloor(floorResult.data);
+          
+          // Fetch Rooms on this floor
+          const roomsRes = await fetch(`/api/rooms?location_id=${roomData.data.location_id}`);
+          const roomsResult = await roomsRes.json();
+          if (roomsResult.success) {
+            setFloorRooms(roomsResult.data);
+            
+            // Fetch status for these rooms (parallel)
+            const statusPromises = roomsResult.data.map((r: Room) => 
+              fetch(`/api/rooms/${r.id}/status`).then(res => res.json())
+            );
+            const statuses = await Promise.all(statusPromises);
+            
+            const statusMap: Record<string, any> = {};
+            statuses.forEach((s: any) => {
+               if (s.success) {
+                 statusMap[s.data.room_id] = {
+                   roomId: s.data.room_id,
+                   isOccupied: s.data.is_occupied
+                 };
+               }
+            });
+            setRoomStatuses(statusMap);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load floor map", err);
+    }
+  };
+
+  useEffect(() => {
+    if (showMap) {
+      fetchFloorData();
+    }
+  }, [showMap, roomId]);
+
+
   const [currentTime, setCurrentTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [bookingInProgress, setBookingInProgress] = useState(false);
@@ -71,6 +135,7 @@ export default function TabletDisplay() {
   }>>([]);
   const [justReleased, setJustReleased] = useState(false);
   const [pendingRelease, setPendingRelease] = useState(false);
+  const device = (searchParams.get('device') as 'computer' | 'ipad' | 'amazon') || 'ipad';
 
   useEffect(() => {
     if (roomId) {
@@ -83,6 +148,28 @@ export default function TabletDisplay() {
       }, 30000); // Refresh every 30 seconds
       return () => clearInterval(interval);
     }
+  }, [roomId]);
+
+  // Realtime updates: refresh this tablet whenever any booking for this room changes
+  useEffect(() => {
+    if (!roomId) return;
+
+    const channel = supabase
+      .channel(`tablet-bookings-${roomId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings', filter: `room_id=eq.${roomId}` },
+        () => {
+          fetchStatus();
+          fetchBookings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomId]);
 
   useEffect(() => {
@@ -208,10 +295,29 @@ export default function TabletDisplay() {
 
       const endTime = new Date(now.getTime() + effectiveDuration * 60 * 1000);
 
-      const host = users.find(u => u.id === bookingForm.hostId);
-      const attendeeEmails = bookingForm.attendeeIds
-        .map(id => users.find(u => u.id === id)?.email)
-        .filter(Boolean) as string[];
+      const host = users.find((u) => u.id === bookingForm.hostId);
+      const attendeeUsers = bookingForm.attendeeIds
+        .map((id) => users.find((u) => u.id === id))
+        .filter(Boolean) as Array<{ id: string; name: string; email: string }>;
+
+      const attendeeEmails = attendeeUsers.map((u) => u.email);
+
+      // Build a friendly quick-book title based on host + attendees
+      let title = 'Quick booking';
+      if (host) {
+        const hostFirst = (host.name || '').split(' ')[0] || host.name;
+
+        if (attendeeUsers.length === 1) {
+          const guestFirst =
+            (attendeeUsers[0].name || '').split(' ')[0] ||
+            attendeeUsers[0].name;
+          title = `${hostFirst} x ${guestFirst}`;
+        } else if (attendeeUsers.length > 1) {
+          title = `${hostFirst} x ${attendeeUsers.length} attendees`;
+        } else {
+          title = `${hostFirst}'s Meeting`;
+        }
+      }
 
       const response = await fetch('/api/bookings', {
         method: 'POST',
@@ -219,7 +325,7 @@ export default function TabletDisplay() {
         body: JSON.stringify({
           room_id: roomId,
           host_user_id: bookingForm.hostId,
-          title: `${host?.name}'s Meeting`,
+          title,
           start_time: now.toISOString(),
           end_time: endTime.toISOString(),
           source: 'tablet',
@@ -278,7 +384,7 @@ export default function TabletDisplay() {
       const response = await fetch(
         `/api/bookings/${status.current_booking.id}/end`,
         {
-          method: 'POST',
+        method: 'POST',
         }
       );
 
@@ -497,6 +603,12 @@ export default function TabletDisplay() {
 
   const { currentBooking: dateCurrentBooking, dayBookings } = getBookingsForDate(selectedDate);
 
+  // When we're in the yellow check-in window, hide that booking from the bottom list
+  const filteredDayBookings =
+    showCheckIn && nextBooking
+      ? dayBookings.filter((b) => b.id !== nextBooking.id)
+      : dayBookings;
+
   const handleConfirmPin = async () => {
     try {
       const pin = settingsPin.trim();
@@ -626,9 +738,9 @@ export default function TabletDisplay() {
         );
 
         if (minutesAvailable > 0) {
-          return {
-            title: `Available for ${minutesAvailable} min`,
-            subtitle: null,
+      return {
+        title: `Available for ${minutesAvailable} min`,
+        subtitle: null,
             host: null,
           };
         }
@@ -651,6 +763,10 @@ export default function TabletDisplay() {
 
   const statusInfo = getStatusText();
 
+  const isComputer = device === 'computer';
+  const isAmazon = device === 'amazon';
+  const bookingsOffsetClass = isAmazon ? 'mt-4' : isComputer ? 'mt-28' : 'mt-20';
+
   const releaseMinutesToEnd = status?.current_booking
     ? Math.round(
         (new Date(status.current_booking.end_time).getTime() -
@@ -662,17 +778,69 @@ export default function TabletDisplay() {
   const requiresReleaseConfirm =
     releaseMinutesToEnd !== null && Math.abs(releaseMinutesToEnd) > 15;
 
+  const renderFeatureBadges = (extraClasses = '') => (
+    <div className={`flex gap-4 ${extraClasses} tablet-btn`}>
+      {status.features?.tv && (
+        <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
+          {/* Screen Mirroring / AirPlay-style icon */}
+          <svg
+            className="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="5" width="18" height="12" rx="2" />
+            <path d="M9 19h6l-3-4z" />
+          </svg>
+          <span className="text-lg font-medium">Screen Mirroring</span>
+        </div>
+      )}
+
+      <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
+        <Users className="w-5 h-5" />
+        <span className="text-lg font-medium">{status.capacity} max</span>
+      </div>
+
+      {status.features?.whiteboard && (
+        <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
+          {/* Whiteboard icon */}
+          <svg
+            className="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="4" width="18" height="12" rx="2" />
+            <path d="M7 14l3.5-3 2 2L17 9" />
+          </svg>
+          <span className="text-lg font-medium">Whiteboard</span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={`h-screen overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`}>
       <div className="relative z-10 h-full flex flex-col">
         {/* Header */}
-        <div className="px-12 py-8 flex justify-between items-center tablet-btn">
-          <Link 
-            href="/tablet"
+        <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
+          <button
+            onClick={() => setShowMap(true)}
             className={`${getFloorMapBgColor()} hover:opacity-80 text-gray-900 text-xl font-medium transition-all px-8 py-4 rounded-full tablet-shadow`}
           >
             Floor map
-          </Link>
+          </button>
+          {isAmazon && (
+            <div className="flex-1 flex justify-center">
+              {renderFeatureBadges()}
+            </div>
+          )}
           <div className="text-right">
             <div className="text-3xl font-normal text-gray-900">
               {currentTime.toLocaleTimeString('en-US', {
@@ -684,56 +852,19 @@ export default function TabletDisplay() {
           </div>
         </div>
 
-        {/* Main Content - Centered */}
-        <div className="flex-1 flex flex-col items-center justify-center px-12 tablet-btn">
-          {/* Feature / capacity badges */}
-          <div className="flex gap-4 mb-12 tablet-btn">
-            {status.features?.tv && (
-              <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
-                {/* Screen Mirroring / AirPlay-style icon */}
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="5" width="18" height="12" rx="2" />
-                  <path d="M9 19h6l-3-4z" />
-                </svg>
-                <span className="text-lg font-medium">Screen Mirroring</span>
-              </div>
-            )}
-
-            <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
-              <Users className="w-5 h-5" />
-              <span className="text-lg font-medium">{status.capacity} max</span>
-            </div>
-
-            {status.features?.whiteboard && (
-              <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
-                {/* Whiteboard icon */}
-                <svg
-                  className="w-5 h-5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="4" width="18" height="12" rx="2" />
-                  <path d="M7 14l3.5-3 2 2L17 9" />
-                </svg>
-                <span className="text-lg font-medium">Whiteboard</span>
-              </div>
-            )}
-          </div>
+        {/* Main Content */}
+        <div
+          className={`flex-1 flex flex-col items-center px-12 tablet-btn ${
+            isAmazon ? 'justify-start pt-4' : 'justify-center'
+          }`}
+        >
+          {/* Feature / capacity badges (non-Amazon layouts) */}
+          {!isAmazon && renderFeatureBadges('mb-12')}
 
           {/* Room Name */}
-          <h1 className="text-9xl font-bold text-gray-900 mb-12 text-center tablet-btn">
+          <h1
+            className={`${isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'} font-bold text-gray-900 mb-12 text-center tablet-btn`}
+          >
             {status.room_name}
           </h1>
 
@@ -741,28 +872,32 @@ export default function TabletDisplay() {
         <div className="text-center mb-16 tablet-btn">
             {status.is_occupied && statusInfo.subtitle ? (
               <>
-                <h2 className={`text-6xl font-semibold ${getTextColor()} mb-4`}>
+                <h2
+                  className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold ${getTextColor()} mb-4`}
+                >
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className={`text-4xl ${getTextColor()}`}>
+                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} ${getTextColor()}`}>
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : showCheckIn && statusInfo.title ? (
               <>
-                <h2 className="text-6xl font-semibold text-black mb-4">
+                <h2 className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold text-black mb-4`}>
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className="text-4xl text-black">
+                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} text-black`}>
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : (
-              <h2 className="text-7xl font-semibold text-white">
+              <h2
+                className={`${isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'} font-semibold text-white`}
+              >
                 {statusInfo.title}
               </h2>
             )}
@@ -774,6 +909,7 @@ export default function TabletDisplay() {
               hideActions ? 'opacity-0 translate-y-3 pointer-events-none' : 'opacity-100 translate-y-0'
             }`}
           >
+            {/* Green: quick book */}
             {isAvailable && !showCheckIn && !showBookingForm && (
               <button
                 onClick={() => handleQuickBookClick(30)}
@@ -783,6 +919,17 @@ export default function TabletDisplay() {
               </button>
             )}
 
+            {/* Yellow: check-in for upcoming event */}
+            {showCheckIn && !status.is_occupied && nextBooking && (
+              <button
+                onClick={() => handleCheckIn(nextBooking.id)}
+                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
+              >
+                Check in
+              </button>
+            )}
+
+            {/* Red: in meeting – release / extend */}
             {!isAvailable && !showCheckIn && (
               <>
                 <button
@@ -805,33 +952,49 @@ export default function TabletDisplay() {
         </div>
 
         {/* Bottom Section - Next Bookings */}
-        <div className={`${getScheduleBgColor()} backdrop-blur-sm px-12 py-8 tablet-btn`}>
+        <div
+          className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
+            isAmazon ? 'py-4' : 'py-8'
+          } tablet-btn`}
+        >
           <div
             ref={eventsScrollRef}
-            className="max-w-7xl mx-auto max-h-64 overflow-y-auto space-y-5 pb-8 pr-24 tablet-btn"
+            className="max-w-7xl mx-auto max-h-64 overflow-y-auto space-y-5 pb-8 pr-24 tablet-btn no-scrollbar"
           >
-            {dayBookings.map((booking) => (
+            {filteredDayBookings.map((booking) => {
+              const isTapEnabled =
+                isAvailable && !showCheckIn && isToday(selectedDate);
+
+              return (
               <button
                 key={booking.id}
                 type="button"
-                onClick={() => handleCheckIn(booking.id)}
-                className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} active:scale-[0.99] transition-transform`}
+                  onClick={isTapEnabled ? () => handleCheckIn(booking.id) : undefined}
+                  className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
+                    isTapEnabled ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'
+                  } transition-transform`}
               >
                 <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
-                  <span>{formatTime(booking.start_time)}-{formatTime(booking.end_time)}</span>
+                    <span>
+                      {formatTime(booking.start_time)}-{formatTime(booking.end_time)}
+                    </span>
                   <span>•</span>
                   <Users className="w-6 h-6" />
                   <span>{booking.attendee_count}</span>
                 </div>
                 <div className="text-gray-900 text-3xl font-bold tablet-btn">
-                  {booking.title} {booking.host_name && <>by {booking.host_name}</>}
+                    {booking.title}{' '}
+                    {booking.host_name && <>by {booking.host_name}</>}
                 </div>
+                  {isTapEnabled && (
                 <div className="mt-1 text-base text-gray-900/80 tablet-btn">
                   Tap to check in
                 </div>
+                  )}
               </button>
-            ))}
-            {dayBookings.length === 0 && (
+              );
+            })}
+            {filteredDayBookings.length === 0 && (
               <div className="text-center text-gray-700 text-2xl py-4">
                 No more bookings today
               </div>
@@ -969,6 +1132,27 @@ export default function TabletDisplay() {
                     </div>
                   )}
                 </div>
+
+                {/* Actions */}
+                <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCancelBooking}
+                    className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={quickBook}
+                    disabled={
+                      bookingInProgress || !bookingForm.hostId
+                    }
+                    className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
+                  >
+                    {bookingInProgress ? 'Booking…' : 'Book now'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1023,6 +1207,37 @@ export default function TabletDisplay() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Map Modal */}
+        {showMap && (
+          <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-8">
+             <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full h-full relative flex flex-col">
+                <div className="absolute top-4 right-4 z-10">
+                  <button 
+                    onClick={() => setShowMap(false)}
+                    className="bg-gray-900 text-white p-4 rounded-full shadow-lg hover:bg-black transition-colors"
+                  >
+                    <X className="w-8 h-8" />
+                  </button>
+                </div>
+                
+                <div className="flex-1 w-full h-full bg-gray-100">
+                  {floor ? (
+                    <FloorPlanViewer
+                      floor={floor}
+                      rooms={floorRooms}
+                      roomStatuses={roomStatuses}
+                      currentRoomId={roomId}
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center text-3xl text-gray-400 font-medium">
+                      Loading floor map...
+                    </div>
+                  )}
+                </div>
+             </div>
           </div>
         )}
       </div>

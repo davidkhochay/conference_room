@@ -1,25 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAdminClient } from '@/lib/supabase/server';
-import { UpdateRoomSchema } from '@/lib/types/api.types';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ roomId: string }> }
+  { params }: { params: Promise<{ floorId: string }> }
 ) {
   try {
-    const { roomId } = await params;
+    const { floorId } = await params;
     const supabase = getServerAdminClient();
 
     const { data, error } = await supabase
-      .from('rooms')
-      .select('*, location:locations(*)')
-      .eq('id', roomId)
+      .from('floors')
+      .select('*')
+      .eq('id', floorId)
       .single();
 
-    if (error || !data) {
+    if (error) {
       return NextResponse.json(
-        { success: false, error: { error: 'NOT_FOUND', message: 'Room not found' } },
-        { status: 404 }
+        { success: false, error: { error: 'DATABASE_ERROR', message: error.message } },
+        { status: 500 }
       );
     }
 
@@ -32,29 +31,38 @@ export async function GET(
   }
 }
 
-export async function PATCH(
+export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ roomId: string }> }
+  { params }: { params: Promise<{ floorId: string }> }
 ) {
   try {
-    const { roomId } = await params;
+    const { floorId } = await params;
     const body = await request.json();
-    
-    console.log('PATCH /rooms/[roomId] - Received:', {
-      roomId,
+    const supabase = getServerAdminClient();
+
+    console.log('PUT /floors/[floorId] - Received:', {
+      floorId,
       body,
     });
 
-    const validatedData = UpdateRoomSchema.parse(body);
-    console.log('Validated data:', validatedData);
+    const updateData = {
+      name: body.name,
+      level: body.level,
+      image_url: body.image_url,
+      width: body.width,
+      height: body.height,
+      svg_content: body.svg_content,
+      test_pins: body.test_pins || null,
+      updated_at: new Date().toISOString(),
+    };
 
-    const supabase = getServerAdminClient();
+    console.log('Updating floor with:', updateData);
 
     const { data, error } = await supabase
-      .from('rooms')
-      .update(validatedData)
-      .eq('id', roomId)
-      .select('*, location:locations(*)')
+      .from('floors')
+      .update(updateData)
+      .eq('id', floorId)
+      .select()
       .single();
 
     if (error) {
@@ -65,29 +73,29 @@ export async function PATCH(
       );
     }
 
-    console.log('Room updated successfully:', data);
+    console.log('Floor updated successfully:', data);
     return NextResponse.json({ success: true, data });
   } catch (error: any) {
-    console.error('PATCH /rooms/[roomId] error:', error);
+    console.error('PUT /floors/[floorId] error:', error);
     return NextResponse.json(
-      { success: false, error: { error: 'VALIDATION_ERROR', message: error.message } },
-      { status: 400 }
+      { success: false, error: { error: 'INTERNAL_ERROR', message: error.message } },
+      { status: 500 }
     );
   }
 }
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ roomId: string }> }
+  { params }: { params: Promise<{ floorId: string }> }
 ) {
   try {
-    const { roomId } = await params;
+    const { floorId } = await params;
     const supabase = getServerAdminClient();
 
     const { error } = await supabase
-      .from('rooms')
+      .from('floors')
       .delete()
-      .eq('id', roomId);
+      .eq('id', floorId);
 
     if (error) {
       return NextResponse.json(
@@ -96,7 +104,7 @@ export async function DELETE(
       );
     }
 
-    return NextResponse.json({ success: true, data: null });
+    return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: { error: 'INTERNAL_ERROR', message: error.message } },

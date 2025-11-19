@@ -8,9 +8,10 @@ interface ImageUploadProps {
   value: string;
   onChange: (url: string) => void;
   label?: string;
+  onPreview?: (url: string) => void;
 }
 
-export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
+export function ImageUpload({ value, onChange, label, onPreview }: ImageUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState('');
@@ -90,7 +91,10 @@ export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
 
       {value ? (
         <div className="space-y-3">
-          <div className="relative rounded-lg overflow-hidden border-2 border-gray-200">
+          <div 
+            className="relative rounded-lg overflow-hidden border-2 border-gray-200 cursor-pointer hover:border-blue-400 transition-colors"
+            onClick={() => onPreview?.(value)}
+          >
             <img
               src={value}
               alt="Room preview"
@@ -98,14 +102,17 @@ export function ImageUpload({ value, onChange, label }: ImageUploadProps) {
             />
             <button
               type="button"
-              onClick={handleRemove}
-              className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemove();
+              }}
+              className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg z-10"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           <p className="text-xs text-gray-500">
-            Click the X to remove and upload a different image
+            Click image to view fullscreen • Click X to remove
           </p>
         </div>
       ) : (
