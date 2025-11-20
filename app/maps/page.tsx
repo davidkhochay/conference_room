@@ -17,7 +17,9 @@ export default function MapsPage() {
   const [floors, setFloors] = useState<Floor[]>([]);
   const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
   const [floorRooms, setFloorRooms] = useState<Room[]>([]);
-  const [roomStatuses, setRoomStatuses] = useState<Record<string, { roomId: string; isOccupied: boolean }>>({});
+  const [roomStatuses, setRoomStatuses] = useState<
+    Record<string, { roomId: string; isOccupied: boolean; uiState?: 'free' | 'checkin' | 'busy' }>
+  >({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -83,12 +85,15 @@ export default function MapsPage() {
           const statuses = await Promise.all(statusPromises);
           const statusMap: Record<string, any> = {};
           statuses.forEach((s: any) => {
-             if (s.success) {
-               statusMap[s.data.room_id] = {
-                 roomId: s.data.room_id,
-                 isOccupied: s.data.is_occupied
-               };
-             }
+            if (s.success) {
+              const uiState = (s.data.ui_state || 'free') as 'free' | 'checkin' | 'busy';
+              statusMap[s.data.room_id] = {
+                roomId: s.data.room_id,
+                // Treat both busy and check-in as not freely available on the map
+                isOccupied: uiState === 'busy' || uiState === 'checkin',
+                uiState,
+              };
+            }
           });
           setRoomStatuses(statusMap);
         }

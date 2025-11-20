@@ -7,6 +7,7 @@ interface RoomStatus {
   roomId: string;
   isOccupied: boolean;
   nextBookingTime?: string;
+  uiState?: 'free' | 'checkin' | 'busy';
 }
 
 interface FloorPlanViewerProps {
@@ -102,20 +103,30 @@ export default function FloorPlanViewer({
           {/* Rooms */}
           {mappedRooms.map(room => {
             const pos = room.map_position as any;
-            const status = roomStatuses[room.id] || { isOccupied: false };
+            const status = roomStatuses[room.id] || { roomId: room.id, isOccupied: false };
             const isCurrent = currentRoomId === room.id;
-            
-            let fillColor = status.isOccupied ? '#ef4444' : '#10b981';
-            let strokeColor = status.isOccupied ? '#b91c1c' : '#059669';
-            
+
+            const state = status.uiState ?? (status.isOccupied ? 'busy' : 'free');
+
+            let fillColor = '#34CB57'; // free (green)
+            let strokeColor = '#15803d';
+
+            if (state === 'busy') {
+              fillColor = '#EC5353'; // red
+              strokeColor = '#b91c1c';
+            } else if (state === 'checkin') {
+              fillColor = '#FFC627'; // yellow
+              strokeColor = '#E0A800';
+            }
+
             if (isCurrent) {
               fillColor = '#3b82f6';
               strokeColor = '#1d4ed8';
             }
 
             return (
-              <g 
-                key={room.id} 
+              <g
+                key={room.id}
                 onClick={() => onRoomClick?.(room.id)}
                 className={`cursor-pointer transition-all duration-200 ${onRoomClick ? 'hover:opacity-80' : ''}`}
               >
@@ -125,9 +136,9 @@ export default function FloorPlanViewer({
                   width={pos.width}
                   height={pos.height}
                   fill={fillColor}
-                  fillOpacity={isCurrent ? "0.5" : "0.3"}
+                  fillOpacity={isCurrent ? '0.5' : '0.3'}
                   stroke={strokeColor}
-                  strokeWidth={isCurrent ? "4" : "2"}
+                  strokeWidth={isCurrent ? '4' : '2'}
                   rx="4"
                 />
 
@@ -141,12 +152,18 @@ export default function FloorPlanViewer({
                 >
                   {room.name}
                 </text>
-                
+
                 <circle
                   cx={pos.x + pos.width - 10}
                   cy={pos.y + 10}
                   r="4"
-                  fill={status.isOccupied ? "#ef4444" : "#10b981"}
+                  fill={
+                    state === 'busy'
+                      ? '#EC5353'
+                      : state === 'checkin'
+                      ? '#FFC627'
+                      : '#34CB57'
+                  }
                   stroke="white"
                   strokeWidth="1"
                 />

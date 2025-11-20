@@ -84,65 +84,48 @@ export default function BookingPage() {
 
       if (response.ok && result.success && result.data) {
         const status = result.data;
-        const now = new Date();
+        const next =
+          status.next_bookings && status.next_bookings.length > 0
+            ? status.next_bookings[0]
+            : null;
 
-        const next = status.next_bookings && status.next_bookings.length > 0
-          ? status.next_bookings[0]
-          : null;
+        // Use unified ui_state from the status API so cards, tablets, and maps agree
+        const uiState = (status.ui_state || (status.is_occupied ? 'busy' : 'free')) as
+          | 'free'
+          | 'checkin'
+          | 'busy';
 
-        // Check-in / starting soon window (same logic as tablet)
-        let isStartingSoon = false;
-        if (!status.current_booking && next) {
-          const startTime = new Date(next.start_time);
-          const diffMinutes = (startTime.getTime() - now.getTime()) / (1000 * 60);
-          if (diffMinutes >= -10 && diffMinutes <= 10) {
-            isStartingSoon = true;
-          }
+        let state: RoomWithAvailability['availability']['state'] = 'available';
+        if (uiState === 'busy') {
+          state = 'busy';
+        } else if (uiState === 'checkin') {
+          state = 'starting_soon';
         }
 
-        // Build current booking if occupied
-        const currentBooking: Booking | null = status.current_booking
-          ? {
-              id: status.current_booking.id,
-              start_time: status.current_booking.start_time,
-              end_time: status.current_booking.end_time,
-              title: status.current_booking.title,
-              host_name: status.current_booking.host_name,
-            }
-          : null;
+        const currentBooking: Booking | null =
+          status.current_booking
+            ? {
+                id: status.current_booking.id,
+                start_time: status.current_booking.start_time,
+                end_time: status.current_booking.end_time,
+                title: status.current_booking.title,
+                host_name: status.current_booking.host_name,
+              }
+            : uiState === 'checkin' && next
+            ? {
+                id: next.id,
+                start_time: next.start_time,
+                end_time: next.end_time,
+                title: next.title,
+                host_name: next.host_name,
+              }
+            : null;
 
-        if (status.is_occupied) {
-          return {
-            state: 'busy',
-            isAvailableNow: false,
-            availableUntil: null,
-            currentBooking,
-            nextBookingStart: next ? next.start_time : null,
-          };
-        }
-
-        if (isStartingSoon && next) {
-          return {
-            state: 'starting_soon',
-            isAvailableNow: false,
-            availableUntil: null,
-            currentBooking: {
-              id: next.id,
-              start_time: next.start_time,
-              end_time: next.end_time,
-              title: next.title,
-              host_name: next.host_name,
-            },
-            nextBookingStart: next.start_time,
-          };
-        }
-
-        // Available state
         return {
-          state: 'available',
-          isAvailableNow: true,
-          availableUntil: status.available_until,
-          currentBooking: null,
+          state,
+          isAvailableNow: uiState === 'free',
+          availableUntil: uiState === 'free' ? status.available_until : null,
+          currentBooking,
           nextBookingStart: next ? next.start_time : null,
         };
       }

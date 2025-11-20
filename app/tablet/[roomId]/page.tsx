@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState, Suspense } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/lib/components/ui/Button';
 import { Calendar, Clock, User, QrCode, Users, X } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -33,12 +33,13 @@ interface RoomStatus {
     end_time: string;
   }>;
   available_until: string | null;
+  ui_state?: 'free' | 'checkin' | 'busy';
 }
 
 import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
 import { Floor, Room } from '@/lib/types/database.types';
 
-function TabletDisplayContent() {
+export default function TabletDisplay() {
   const params = useParams();
   const searchParams = useSearchParams();
   const roomId = params?.roomId as string;
@@ -47,9 +48,13 @@ function TabletDisplayContent() {
   const [status, setStatus] = useState<RoomStatus | null>(null);
   // ... existing state ...
   const [showMap, setShowMap] = useState(false);
+  const [floors, setFloors] = useState<Floor[]>([]);
+  const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
   const [floor, setFloor] = useState<Floor | null>(null);
   const [floorRooms, setFloorRooms] = useState<Room[]>([]);
-  const [roomStatuses, setRoomStatuses] = useState<Record<string, { roomId: string; isOccupied: boolean }>>({});
+  const [roomStatuses, setRoomStatuses] = useState<
+    Record<string, { roomId: string; isOccupied: boolean; uiState?: 'free' | 'checkin' | 'busy' }>
+  >({});
 
   // ...
 
@@ -61,32 +66,59 @@ function TabletDisplayContent() {
       const roomData = await roomRes.json();
       
       if (roomData.success && roomData.data.floor_id) {
-        // Fetch Floor
-        const floorRes = await fetch(`/api/admin/locations/${roomData.data.location_id}/floors/${roomData.data.floor_id}`);
-        const floorResult = await floorRes.json();
-        if (floorResult.success) {
-          setFloor(floorResult.data);
-          
-          // Fetch Rooms on this floor
-          const roomsRes = await fetch(`/api/rooms?location_id=${roomData.data.location_id}`);
+        const locationId = roomData.data.location_id as string;
+        const currentFloorId = roomData.data.floor_id as string;
+
+        // Fetch all floors for this location
+        const floorsRes = await fetch(
+          `/api/admin/locations/${locationId}/floors`
+        );
+        const floorsResult = await floorsRes.json();
+
+        if (floorsResult.success) {
+          const allFloors: Floor[] = floorsResult.data;
+          setFloors(allFloors);
+
+          const effectiveFloorId =
+            selectedFloorId && allFloors.some((f) => f.id === selectedFloorId)
+              ? selectedFloorId
+              : currentFloorId;
+
+          const targetFloor =
+            allFloors.find((f) => f.id === effectiveFloorId) ||
+            allFloors[0] ||
+            null;
+
+          if (targetFloor) {
+            setFloor(targetFloor);
+            setSelectedFloorId(targetFloor.id);
+          }
+
+          // Fetch Rooms for this location
+          const roomsRes = await fetch(`/api/rooms?location_id=${locationId}`);
           const roomsResult = await roomsRes.json();
           if (roomsResult.success) {
             setFloorRooms(roomsResult.data);
-            
+
             // Fetch status for these rooms (parallel)
-            const statusPromises = roomsResult.data.map((r: Room) => 
-              fetch(`/api/rooms/${r.id}/status`).then(res => res.json())
+            const statusPromises = roomsResult.data.map((r: Room) =>
+              fetch(`/api/rooms/${r.id}/status`).then((res) => res.json())
             );
             const statuses = await Promise.all(statusPromises);
-            
+
             const statusMap: Record<string, any> = {};
             statuses.forEach((s: any) => {
-               if (s.success) {
-                 statusMap[s.data.room_id] = {
-                   roomId: s.data.room_id,
-                   isOccupied: s.data.is_occupied
-                 };
-               }
+              if (s.success) {
+                const uiState = (s.data.ui_state || 'free') as
+                  | 'free'
+                  | 'checkin'
+                  | 'busy';
+                statusMap[s.data.room_id] = {
+                  roomId: s.data.room_id,
+                  isOccupied: uiState === 'busy' || uiState === 'checkin',
+                  uiState,
+                };
+              }
             });
             setRoomStatuses(statusMap);
           }
@@ -136,6 +168,11 @@ function TabletDisplayContent() {
   const [justReleased, setJustReleased] = useState(false);
   const [pendingRelease, setPendingRelease] = useState(false);
   const device = (searchParams.get('device') as 'computer' | 'ipad' | 'amazon') || 'ipad';
+  const [bookingTarget, setBookingTarget] = useState<{
+    roomId: string;
+    roomName: string;
+    availableMinutes: number | null;
+  } | null>(null);
 
   useEffect(() => {
     if (roomId) {
@@ -254,14 +291,67 @@ function TabletDisplayContent() {
     }
   };
 
-  const handleQuickBookClick = (duration: number) => {
-    setSelectedDuration(duration);
+  const handleQuickBookClick = (defaultDuration: number) => {
+    if (!status) return;
+
+    const availableMinutes = computeAvailableMinutes(status);
+    const allowedDurations = [15, 30, 45, 60].filter(
+      (m) => availableMinutes === null || m <= availableMinutes
+    );
+
+    setBookingTarget({
+      roomId,
+      roomName: status.room_name,
+      availableMinutes,
+    });
+
+    setSelectedDuration(
+      allowedDurations.includes(defaultDuration)
+        ? defaultDuration
+        : allowedDurations[0] ?? null
+    );
     setShowBookingForm(true);
+  };
+
+  const handleMapRoomClick = async (clickedRoomId: string) => {
+    const basicStatus = roomStatuses[clickedRoomId];
+    if (
+      !basicStatus ||
+      basicStatus.isOccupied ||
+      basicStatus.uiState === 'checkin'
+    ) {
+      // Only allow booking for rooms that are truly free (not busy or in check-in window)
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/rooms/${clickedRoomId}/status`);
+      const result = await response.json();
+      if (!result.success) return;
+
+      const roomStatus: RoomStatus = result.data;
+      const availableMinutes = computeAvailableMinutes(roomStatus);
+      const allowedDurations = [15, 30, 45, 60].filter(
+        (m) => availableMinutes === null || m <= availableMinutes
+      );
+
+      setBookingTarget({
+        roomId: roomStatus.room_id,
+        roomName: roomStatus.room_name,
+        availableMinutes,
+      });
+
+      setSelectedDuration(allowedDurations[0] ?? null);
+      setShowBookingForm(true);
+    } catch (err) {
+      console.error('Failed to open booking from floor map', err);
+    }
   };
 
   const handleCancelBooking = () => {
     setShowBookingForm(false);
     setSelectedDuration(null);
+    setBookingTarget(null);
     setBookingForm({ hostId: '', attendeeIds: [] });
     setSearchTerm('');
     setAttendeeSearch('');
@@ -276,20 +366,20 @@ function TabletDisplayContent() {
     setBookingInProgress(true);
     try {
       const now = new Date();
-      // Never overlap existing bookings: clamp duration to the gap before the next booking
       let effectiveDuration = selectedDuration;
-      if (nextBooking) {
-        const nextStart = new Date(nextBooking.start_time);
-        const diffMinutes = Math.floor((nextStart.getTime() - now.getTime()) / (1000 * 60));
 
-        if (diffMinutes <= 0) {
-          alert('This room is booked very soon. Quick booking is not available right now.');
+      const availableMinutes =
+        bookingTarget?.availableMinutes ?? computeAvailableMinutes(status);
+
+      if (availableMinutes !== null) {
+        if (availableMinutes <= 0) {
+          alert('This room is not available for a quick booking right now.');
           setBookingInProgress(false);
           return;
         }
 
-        if (effectiveDuration > diffMinutes) {
-          effectiveDuration = diffMinutes;
+        if (effectiveDuration > availableMinutes) {
+          effectiveDuration = availableMinutes;
         }
       }
 
@@ -319,11 +409,13 @@ function TabletDisplayContent() {
         }
       }
 
+      const targetRoomId = bookingTarget?.roomId || roomId;
+
       const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          room_id: roomId,
+          room_id: targetRoomId,
           host_user_id: bookingForm.hostId,
           title,
           start_time: now.toISOString(),
@@ -335,7 +427,11 @@ function TabletDisplayContent() {
 
       const result = await response.json();
       if (result.success) {
-        await fetchStatus();
+        // Only refresh this tablet's status if we booked for the same room
+        if (!bookingTarget || bookingTarget.roomId === roomId) {
+          await fetchStatus();
+          await fetchBookings();
+        }
         handleCancelBooking();
       } else {
         alert(`Failed to book: ${result.error?.message}`);
@@ -446,22 +542,14 @@ function TabletDisplayContent() {
     );
   }
 
-  const isAvailable = !status.is_occupied || justReleased;
+  const isAvailable =
+    (status.ui_state ?? (status.is_occupied ? 'busy' : 'free')) === 'free' ||
+    justReleased;
   const bookingUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/room/${roomId}`;
 
-  // Check if we're within ±10 minutes of an event start time
-  const isCheckInWindow = () => {
-    if (!status.current_booking && status.next_bookings.length > 0) {
-      const now = new Date();
-      const nextBooking = status.next_bookings[0];
-      const startTime = new Date(nextBooking.start_time);
-      const timeDiff = (startTime.getTime() - now.getTime()) / (1000 * 60); // minutes
-      
-      // Within 10 minutes before the event
-      return timeDiff >= -10 && timeDiff <= 10;
-    }
-    return false;
-  };
+  // Check if we're within the unified check-in window (yellow state)
+  const isCheckInWindow = () =>
+    (status.ui_state ?? (status.is_occupied ? 'busy' : 'free')) === 'checkin';
 
   const handleCheckIn = async (bookingId: string) => {
     try {
@@ -608,6 +696,7 @@ function TabletDisplayContent() {
     showCheckIn && nextBooking
       ? dayBookings.filter((b) => b.id !== nextBooking.id)
       : dayBookings;
+  const hasBookingsForDay = filteredDayBookings.length > 0;
 
   const handleConfirmPin = async () => {
     try {
@@ -763,6 +852,40 @@ function TabletDisplayContent() {
 
   const statusInfo = getStatusText();
 
+  const computeAvailableMinutes = (roomStatus: RoomStatus | null): number | null => {
+    if (!roomStatus) return null;
+
+     // During check-in window we treat the room as not bookable
+    if ((roomStatus.ui_state ?? (roomStatus.is_occupied ? 'busy' : 'free')) === 'checkin') {
+      return 0;
+    }
+
+    const now = new Date();
+
+    if (roomStatus.available_until) {
+      const until = new Date(roomStatus.available_until);
+      const diffMinutes = Math.floor((until.getTime() - now.getTime()) / (1000 * 60));
+      if (diffMinutes > 0) {
+        return diffMinutes;
+      }
+    }
+
+    if (roomStatus.next_bookings && roomStatus.next_bookings.length > 0) {
+      const next = new Date(roomStatus.next_bookings[0].start_time);
+      const diffMinutes = Math.floor((next.getTime() - now.getTime()) / (1000 * 60));
+      if (diffMinutes > 0) {
+        return diffMinutes;
+      }
+    }
+
+    return null;
+  };
+
+  const currentRoomAvailableMinutes = computeAvailableMinutes(status);
+  const activeAvailableMinutes =
+    bookingTarget?.availableMinutes ?? currentRoomAvailableMinutes;
+  const durationOptions = [15, 30, 45, 60];
+
   const isComputer = device === 'computer';
   const isAmazon = device === 'amazon';
   const bookingsOffsetClass = isAmazon ? 'mt-4' : isComputer ? 'mt-28' : 'mt-20';
@@ -825,27 +948,31 @@ function TabletDisplayContent() {
     </div>
   );
 
-  // Root + shell layout classes - One Screen Layout
-  const rootClassName = `h-dvh w-screen overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn flex flex-col`;
+  // Root + shell layout classes so we can target Amazon tablet specifically
+  const rootClassName = `fixed inset-0 overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn ${
+    isAmazon ? 'flex items-center justify-center' : ''
+  }`;
 
-  const shellClassName = `relative z-10 flex-1 flex flex-col w-full h-full`;
+  const shellClassName = `relative z-10 flex flex-col ${
+    isAmazon ? 'w-[1920px] h-[1200px] max-w-full max-h-full aspect-[16/10]' : 'h-full'
+  }`;
 
   return (
     <div className={rootClassName}>
       <div className={shellClassName}>
         {/* Header */}
-        <div className="flex-none px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
+        <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
           <button
             onClick={() => setShowMap(true)}
             className={`${getFloorMapBgColor()} hover:opacity-80 text-gray-900 text-xl font-medium transition-all px-8 py-4 rounded-full tablet-shadow`}
           >
             Floor map
           </button>
-          
-          <div className="flex-1 flex justify-center">
+          {isAmazon && (
+            <div className="flex-1 flex justify-center">
               {renderFeatureBadges()}
-          </div>
-
+            </div>
+          )}
           <div className="text-right">
             <div className="text-3xl font-normal text-gray-900">
               {currentTime.toLocaleTimeString('en-US', {
@@ -857,13 +984,18 @@ function TabletDisplayContent() {
           </div>
         </div>
 
-        {/* Main Content - Centered */}
+        {/* Main Content */}
         <div
-          className="flex-1 flex flex-col items-center justify-center px-12 tablet-btn"
+          className={`flex-1 flex flex-col items-center px-12 tablet-btn ${
+            isAmazon ? 'justify-start pt-4' : 'justify-center'
+          }`}
         >
+          {/* Feature / capacity badges (non-Amazon layouts) */}
+          {!isAmazon && renderFeatureBadges('mb-12')}
+
           {/* Room Name */}
           <h1
-            className="text-8xl font-bold text-gray-900 mb-12 text-center tablet-btn"
+            className={`${isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'} font-bold text-gray-900 mb-12 text-center tablet-btn`}
           >
             {status.room_name}
           </h1>
@@ -873,30 +1005,30 @@ function TabletDisplayContent() {
             {status.is_occupied && statusInfo.subtitle ? (
               <>
                 <h2
-                  className={`text-6xl font-semibold ${getTextColor()} mb-4`}
+                  className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold ${getTextColor()} mb-4`}
                 >
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className={`text-4xl ${getTextColor()}`}>
+                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} ${getTextColor()}`}>
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : showCheckIn && statusInfo.title ? (
               <>
-                <h2 className="text-6xl font-semibold text-black mb-4">
+                <h2 className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold text-black mb-4`}>
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className="text-4xl text-black">
+                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} text-black`}>
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : (
               <h2
-                className="text-7xl font-semibold text-white"
+                className={`${isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'} font-semibold text-white`}
               >
                 {statusInfo.title}
               </h2>
@@ -951,13 +1083,21 @@ function TabletDisplayContent() {
           </div>
         </div>
 
-        {/* Bottom Section - Next Booking (Single Only) */}
+        {/* Bottom Section - Next Bookings */}
         <div
-          className={`${getScheduleBgColor()} backdrop-blur-sm px-12 py-8 tablet-btn flex-none`}
+          className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
+            isAmazon ? 'py-4' : 'py-8'
+          } tablet-btn`}
         >
-          <div className="max-w-7xl mx-auto tablet-btn">
-            {/* Only show the very first upcoming booking */}
-            {filteredDayBookings.slice(0, 1).map((booking) => {
+          <div
+            ref={eventsScrollRef}
+            className={`max-w-7xl mx-auto tablet-btn no-scrollbar ${
+              hasBookingsForDay
+                ? 'max-h-64 overflow-y-auto space-y-5 pb-8 pr-24'
+                : 'h-40 flex items-center justify-center'
+            }`}
+          >
+            {filteredDayBookings.map((booking) => {
               const isTapEnabled =
                 isAvailable && !showCheckIn && isToday(selectedDate);
 
@@ -990,8 +1130,8 @@ function TabletDisplayContent() {
               </button>
               );
             })}
-            {filteredDayBookings.length === 0 && (
-              <div className="text-center text-gray-700 text-2xl py-4">
+            {!hasBookingsForDay && (
+              <div className="text-center text-gray-700 text-3xl">
                 No more bookings today
               </div>
             )}
@@ -1022,15 +1162,55 @@ function TabletDisplayContent() {
           </svg>
         </button>
 
-        {/* Booking Form Modal */}
-        {showBookingForm && (
+        {/* Booking Form Modal (status view) */}
+        {showBookingForm && !showMap && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
             <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
               <div className="text-center text-3xl font-bold text-gray-900 mb-2">
-                Book for {selectedDuration} minutes
+                Book {bookingTarget?.roomName || status.room_name}
               </div>
-              <div className="text-center text-lg text-gray-600 mb-8">
-                Starting now
+              <div className="text-center text-lg text-gray-600 mb-6">
+                {selectedDuration
+                  ? `${selectedDuration === 60 ? '1 hour' : `${selectedDuration} minutes`} · starting now`
+                  : 'Select a duration · starting now'}
+              </div>
+
+              {/* Duration selection */}
+              <div className="mb-6">
+                <div className="text-center text-lg font-medium text-gray-800 mb-3">
+                  Duration
+                </div>
+                <div className="flex flex-wrap justify-center gap-3">
+                  {durationOptions.map((minutes) => {
+                    const disabled =
+                      activeAvailableMinutes !== null &&
+                      minutes > activeAvailableMinutes;
+                    const isSelected = selectedDuration === minutes;
+
+                    return (
+                      <button
+                        key={minutes}
+                        type="button"
+                        onClick={() => !disabled && setSelectedDuration(minutes)}
+                        disabled={disabled}
+                        className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
+                          disabled
+                            ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-gray-900 text-white border-gray-900'
+                            : 'border-gray-400 text-gray-800 hover:bg-gray-100'
+                        }`}
+                      >
+                        {minutes === 60 ? '1 hr' : `${minutes} min`}
+                      </button>
+                    );
+                  })}
+                </div>
+                {activeAvailableMinutes !== null && (
+                  <div className="mt-3 text-center text-sm text-gray-500">
+                    Available for {activeAvailableMinutes} min
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">
@@ -1142,7 +1322,7 @@ function TabletDisplayContent() {
                     type="button"
                     onClick={quickBook}
                     disabled={
-                      bookingInProgress || !bookingForm.hostId
+                      bookingInProgress || !bookingForm.hostId || !selectedDuration
                     }
                     className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
                   >
@@ -1209,32 +1389,242 @@ function TabletDisplayContent() {
         {/* Map Modal */}
         {showMap && (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-8">
-             <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full h-full relative flex flex-col">
-                <div className="absolute top-4 right-4 z-10">
-                  <button 
-                    onClick={() => setShowMap(false)}
-                    className="bg-gray-900 text-white p-4 rounded-full shadow-lg hover:bg-black transition-colors"
-                  >
-                    <X className="w-8 h-8" />
-                  </button>
+            <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full h-full relative flex flex-col">
+              {floors.length > 1 && (
+                <div className="absolute top-4 left-4 z-10 flex gap-2">
+                  {floors.map((f) => {
+                    const isActive = f.id === selectedFloorId;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedFloorId(f.id);
+                          setShowBookingForm(false);
+                          setBookingTarget(null);
+                          setSelectedDuration(null);
+                          setFloor(f);
+                        }}
+                        className={`px-4 py-2 rounded-full text-sm font-medium tablet-shadow transition-colors ${
+                          isActive
+                            ? 'bg-gray-900 text-white'
+                            : 'bg-white text-gray-800 hover:bg-gray-100'
+                        }`}
+                      >
+                        {f.name}
+                      </button>
+                    );
+                  })}
                 </div>
-                
-                <div className="flex-1 w-full h-full bg-gray-100">
-                  {floor ? (
-                    <FloorPlanViewer
-                      floor={floor}
-                      rooms={floorRooms}
-                      roomStatuses={roomStatuses}
-                      currentRoomId={roomId}
-                      showTestPins={false}
-                    />
-                  ) : (
-                    <div className="h-full flex items-center justify-center text-3xl text-gray-400 font-medium">
-                      Loading floor map...
+              )}
+
+              <div className="absolute top-4 right-4 z-10">
+                <button
+                  onClick={() => {
+                    // Close both the map and any map-origin booking overlay
+                    setShowMap(false);
+                    setShowBookingForm(false);
+                    setBookingTarget(null);
+                    setSelectedDuration(null);
+                  }}
+                  className="bg-gray-900 text-white p-4 rounded-full shadow-lg hover:bg-black transition-colors"
+                >
+                  <X className="w-8 h-8" />
+                </button>
+              </div>
+
+              <div className="flex-1 w-full h-full bg-gray-100">
+                {floor ? (
+                  <FloorPlanViewer
+                    floor={floor}
+                    rooms={floorRooms}
+                    roomStatuses={roomStatuses}
+                    currentRoomId={roomId}
+                    showTestPins={false}
+                    onRoomClick={handleMapRoomClick}
+                  />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-3xl text-gray-400 font-medium">
+                    Loading floor map...
+                  </div>
+                )}
+              </div>
+
+              {/* Booking overlay on top of map */}
+              {showBookingForm && bookingTarget && (
+                <div className="absolute inset-x-0 bottom-0 pb-10 flex justify-center pointer-events-none">
+                  <div className="pointer-events-auto w-full max-w-2xl px-6">
+                    <div className="bg-white rounded-3xl p-8 shadow-2xl max-h-[70vh] overflow-y-auto">
+                      <div className="text-center text-3xl font-bold text-gray-900 mb-2">
+                        Book {bookingTarget.roomName}
+                      </div>
+                      <div className="text-center text-lg text-gray-600 mb-6">
+                        {selectedDuration
+                          ? `${selectedDuration === 60 ? '1 hour' : `${selectedDuration} minutes`} · starting now`
+                          : 'Select a duration · starting now'}
+                      </div>
+
+                      {/* Duration selection */}
+                      <div className="mb-6">
+                        <div className="text-center text-lg font-medium text-gray-800 mb-3">
+                          Duration
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-3">
+                          {durationOptions.map((minutes) => {
+                            const disabled =
+                              activeAvailableMinutes !== null &&
+                              minutes > activeAvailableMinutes;
+                            const isSelected = selectedDuration === minutes;
+
+                            return (
+                              <button
+                                key={minutes}
+                                type="button"
+                                onClick={() => !disabled && setSelectedDuration(minutes)}
+                                disabled={disabled}
+                                className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
+                                  disabled
+                                    ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'bg-gray-900 text-white border-gray-900'
+                                    : 'border-gray-400 text-gray-800 hover:bg-gray-100'
+                                }`}
+                              >
+                                {minutes === 60 ? '1 hr' : `${minutes} min`}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {activeAvailableMinutes !== null && (
+                          <div className="mt-3 text-center text-sm text-gray-500">
+                            Available for {activeAvailableMinutes} min
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-4">
+                        {/* Host Selection */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Host *
+                          </label>
+                          {selectedHost ? (
+                            <div className="flex items-center justify-between bg-green-50 border-2 border-green-500 rounded-xl p-3">
+                              <div>
+                                <div className="font-semibold text-gray-900">{selectedHost.name}</div>
+                                <div className="text-sm text-gray-600">{selectedHost.email}</div>
+                              </div>
+                              <button
+                                onClick={() => setBookingForm({ ...bookingForm, hostId: '' })}
+                                className="text-red-600 hover:text-red-800 font-semibold"
+                              >
+                                Change
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Search by name or email..."
+                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-lg focus:outline-none focus:border-green-500 text-gray-900 mb-2"
+                                autoFocus
+                              />
+                              <div className="max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl">
+                                {filteredUsers.slice(0, 5).map((user) => (
+                                  <button
+                                    key={user.id}
+                                    onClick={() => {
+                                      setBookingForm({ ...bookingForm, hostId: user.id });
+                                      setSearchTerm('');
+                                    }}
+                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                                  >
+                                    <div className="font-semibold text-gray-900">{user.name}</div>
+                                    <div className="text-sm text-gray-600">{user.email}</div>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Attendees Selection */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Attendees (optional)
+                          </label>
+                          {selectedAttendees.length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                              {selectedAttendees.map((user) => (
+                                <div
+                                  key={user.id}
+                                  className="flex items-center bg-blue-50 rounded-full px-3 py-1"
+                                >
+                                  <span className="text-sm text-gray-900">{user.name}</span>
+                                  <button
+                                    onClick={() => toggleAttendee(user.id)}
+                                    className="ml-2 text-red-600 hover:text-red-800"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Attendee search */}
+                          <input
+                            type="text"
+                            value={attendeeSearch}
+                            onChange={(e) => setAttendeeSearch(e.target.value)}
+                            placeholder="Search attendees..."
+                            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-lg focus:outline-none focus:border-green-500 text-gray-900 mb-2"
+                          />
+                          {attendeeSearch && (
+                            <div className="max-h-40 overflow-y-auto border-2 border-gray-200 rounded-xl">
+                              {filteredAttendees.slice(0, 5).map((user) => (
+                                <button
+                                  key={user.id}
+                                  onClick={() => {
+                                    toggleAttendee(user.id);
+                                    setAttendeeSearch('');
+                                  }}
+                                  className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                                >
+                                  <div className="font-semibold text-gray-900">{user.name}</div>
+                                  <div className="text-sm text-gray-600">{user.email}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Actions */}
+                        <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                          <button
+                            type="button"
+                            onClick={handleCancelBooking}
+                            className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={quickBook}
+                            disabled={bookingInProgress || !bookingForm.hostId || !selectedDuration}
+                            className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
+                          >
+                            {bookingInProgress ? 'Booking…' : 'Book now'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  )}
+                  </div>
                 </div>
-             </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1243,11 +1633,3 @@ function TabletDisplayContent() {
 }
 
 
-
-export default function TabletDisplay() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-900 flex items-center justify-center"><div className="text-white text-2xl">Loading...</div></div>}>
-      <TabletDisplayContent />
-    </Suspense>
-  );
-}

@@ -88,6 +88,7 @@ export type RoomStatusResponse = {
     end_time: string;
   }>;
   available_until: string | null; // ISO datetime or null if not currently available
+  ui_state: 'free' | 'checkin' | 'busy'; // unified UI state for maps, tablets, and overlays
 };
 
 // Room availability request

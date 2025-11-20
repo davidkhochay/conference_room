@@ -81,6 +81,19 @@ export async function GET(
       availableUntil = upcomingBookings[0].start_time;
     }
 
+    // Unified UI state for all clients (tablet, web, maps)
+    let uiState: RoomStatusResponse['ui_state'] = isOccupied ? 'busy' : 'free';
+
+    if (!isOccupied && upcomingBookings && upcomingBookings.length > 0) {
+      const next = new Date(upcomingBookings[0].start_time);
+      const diffMinutes = (next.getTime() - now.getTime()) / (1000 * 60);
+
+      // Within ±10 minutes of the next booking start => check-in window (yellow)
+      if (diffMinutes >= -10 && diffMinutes <= 10) {
+        uiState = 'checkin';
+      }
+    }
+
     const response: RoomStatusResponse = {
       room_id: room.id,
       room_name: room.name,
@@ -110,6 +123,7 @@ export async function GET(
           end_time: b.end_time,
         })) || [],
       available_until: availableUntil,
+      ui_state: uiState,
     };
 
     return NextResponse.json({ success: true, data: response });
