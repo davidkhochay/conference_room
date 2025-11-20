@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, Suspense } from 'react';
 import { Button } from '@/lib/components/ui/Button';
 import { Calendar, Clock, User, QrCode, Users, X } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -38,7 +38,7 @@ interface RoomStatus {
 import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
 import { Floor, Room } from '@/lib/types/database.types';
 
-export default function TabletDisplay() {
+function TabletDisplayContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const roomId = params?.roomId as string;
@@ -1243,3 +1243,11 @@ export default function TabletDisplay() {
 }
 
 
+
+export default function TabletDisplay() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-900 flex items-center justify-center"><div className="text-white text-2xl">Loading...</div></div>}>
+      <TabletDisplayContent />
+    </Suspense>
+  );
+}
