@@ -765,6 +765,8 @@ export default function TabletDisplay() {
 
   const isComputer = device === 'computer';
   const isAmazon = device === 'amazon';
+  // For Amazon tablets we keep the bookings section close to the main content,
+  // but leave a small gap so the buttons and events don't feel cramped.
   const bookingsOffsetClass = isAmazon ? 'mt-4' : isComputer ? 'mt-28' : 'mt-20';
 
   const releaseMinutesToEnd = status?.current_booking
@@ -825,13 +827,13 @@ export default function TabletDisplay() {
     </div>
   );
 
-  // Root + shell layout classes so we can target Amazon tablet specifically
-  const rootClassName = `full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn ${
-    isAmazon ? 'flex items-center justify-center' : ''
-  }`;
+  // Root + shell layout classes so we can target Amazon tablet specifically.
+  // On Amazon, we want the UI to use a fixed, tablet-friendly width while
+  // still stretching to the full screen height, without extra gutters.
+  const rootClassName = `full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`;
 
   const shellClassName = `relative z-10 flex flex-col ${
-    isAmazon ? 'w-[1920px] h-[1200px] max-w-full max-h-full aspect-[16/10]' : 'h-full'
+    isAmazon ? 'w-full h-full max-w-[1280px] mx-auto' : 'h-full'
   }`;
 
   return (
