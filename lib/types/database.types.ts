@@ -84,6 +84,9 @@ export type Room = {
     height?: number;
     points?: Array<{x: number; y: number}>;
     type?: 'rect' | 'polygon';
+    // Optional \"You are here\" marker position inside the room, in floor coordinates.
+    you_x?: number;
+    you_y?: number;
   } | null;
   google_resource_id: string | null;
   google_calendar_id: string | null;

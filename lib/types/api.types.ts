@@ -50,6 +50,9 @@ export const CreateRoomSchema = z.object({
     height: z.number().optional(),
     points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
     type: z.enum(['rect', 'polygon']).optional(),
+    // Optional \"You are here\" marker inside the room, in floor coordinates
+    you_x: z.number().optional(),
+    you_y: z.number().optional(),
   }).optional(),
 });
 

@@ -46,6 +46,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
   const [draggingPin, setDraggingPin] = useState<string | null>(null);
   const [placingPin, setPlacingPin] = useState<string | null>(null);
   const [showTabletPreview, setShowTabletPreview] = useState(false);
+  const [placingYouRoomId, setPlacingYouRoomId] = useState<string | null>(null);
   
   // Calculate center from the 4 corner pins
   const centerPin = {
@@ -231,6 +232,28 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!selectedFloor) return;
     const { x, y } = getMousePos(e);
+
+    // Handle placing a per-room \"You\" pin (tablet position)
+    if (placingYouRoomId) {
+      setRooms(prev =>
+        prev.map(r => {
+          if (r.id === placingYouRoomId && r.map_position) {
+            const pos = r.map_position as any;
+            return {
+              ...r,
+              map_position: {
+                ...pos,
+                you_x: x,
+                you_y: y,
+              },
+            };
+          }
+          return r;
+        })
+      );
+      setPlacingYouRoomId(null);
+      return;
+    }
 
     // Handle placing a test pin
     if (placingPin) {
@@ -581,23 +604,39 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                 {rooms.map(room => {
                   const isMapped = room.floor_id === selectedFloor.id && room.map_position;
                   return (
-                    <button
-                      key={room.id}
-                      onClick={() => {
-                        setTool('room');
-                        setSelectedRoomId(room.id);
-                      }}
-                      className={`w-full text-left px-3 py-2 rounded-md text-xs flex items-center justify-between ${
-                        selectedRoomId === room.id 
-                          ? 'bg-blue-600 text-white' 
-                          : isMapped 
-                            ? 'bg-green-50 text-green-700' 
-                            : 'bg-white border border-gray-200 text-gray-600'
-                      }`}
-                    >
-                      <span>{room.name}</span>
-                      {isMapped && <span className="text-[10px]">Mapped</span>}
-                    </button>
+                    <div key={room.id} className="space-y-1">
+                      <button
+                        onClick={() => {
+                          setTool('room');
+                          setSelectedRoomId(room.id);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-md text-xs flex items-center justify-between ${
+                          selectedRoomId === room.id 
+                            ? 'bg-blue-600 text-white' 
+                            : isMapped 
+                              ? 'bg-green-50 text-green-700' 
+                              : 'bg-white border border-gray-200 text-gray-600'
+                        }`}
+                      >
+                        <span>{room.name}</span>
+                        {isMapped && <span className="text-[10px]">Mapped</span>}
+                      </button>
+                      {isMapped && (
+                        <button
+                          type="button"
+                          onClick={() => setPlacingYouRoomId(room.id)}
+                          className={`w-full text-left px-3 py-1 rounded-md text-[10px] border border-dashed ${
+                            placingYouRoomId === room.id
+                              ? 'border-blue-500 text-blue-600 bg-blue-50'
+                              : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600'
+                          }`}
+                        >
+                          {placingYouRoomId === room.id
+                            ? 'Click on the map to place tablet "You" pin'
+                            : 'Set tablet "You" pin'}
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -667,25 +706,53 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
               {/* Corner Test Pins - DRAGGABLE to verify coordinate mapping */}
               <g>
                 {/* Top-left */}
-                <g className="cursor-move" onMouseDown={(e) => { e.stopPropagation(); setDraggingPin('tl'); }}>
+                <g
+                  className="cursor-move"
+                  onMouseDown={(e) => {
+                    if (placingYouRoomId) return;
+                    e.stopPropagation();
+                    setDraggingPin('tl');
+                  }}
+                >
                   <circle cx={testPins.tl.x} cy={testPins.tl.y} r="10" fill="red" stroke="white" strokeWidth="2" />
                   <text x={testPins.tl.x} y={testPins.tl.y + 20} textAnchor="middle" className="text-xs font-bold fill-red-600 pointer-events-none">TL ({Math.round(testPins.tl.x)},{Math.round(testPins.tl.y)})</text>
                 </g>
                 
                 {/* Top-right */}
-                <g className="cursor-move" onMouseDown={(e) => { e.stopPropagation(); setDraggingPin('tr'); }}>
+                <g
+                  className="cursor-move"
+                  onMouseDown={(e) => {
+                    if (placingYouRoomId) return;
+                    e.stopPropagation();
+                    setDraggingPin('tr');
+                  }}
+                >
                   <circle cx={testPins.tr.x} cy={testPins.tr.y} r="10" fill="red" stroke="white" strokeWidth="2" />
                   <text x={testPins.tr.x} y={testPins.tr.y + 20} textAnchor="middle" className="text-xs font-bold fill-red-600 pointer-events-none">TR ({Math.round(testPins.tr.x)},{Math.round(testPins.tr.y)})</text>
                 </g>
                 
                 {/* Bottom-left */}
-                <g className="cursor-move" onMouseDown={(e) => { e.stopPropagation(); setDraggingPin('bl'); }}>
+                <g
+                  className="cursor-move"
+                  onMouseDown={(e) => {
+                    if (placingYouRoomId) return;
+                    e.stopPropagation();
+                    setDraggingPin('bl');
+                  }}
+                >
                   <circle cx={testPins.bl.x} cy={testPins.bl.y} r="10" fill="red" stroke="white" strokeWidth="2" />
                   <text x={testPins.bl.x} y={testPins.bl.y - 10} textAnchor="middle" className="text-xs font-bold fill-red-600 pointer-events-none">BL ({Math.round(testPins.bl.x)},{Math.round(testPins.bl.y)})</text>
                 </g>
                 
                 {/* Bottom-right */}
-                <g className="cursor-move" onMouseDown={(e) => { e.stopPropagation(); setDraggingPin('br'); }}>
+                <g
+                  className="cursor-move"
+                  onMouseDown={(e) => {
+                    if (placingYouRoomId) return;
+                    e.stopPropagation();
+                    setDraggingPin('br');
+                  }}
+                >
                   <circle cx={testPins.br.x} cy={testPins.br.y} r="10" fill="red" stroke="white" strokeWidth="2" />
                   <text x={testPins.br.x} y={testPins.br.y - 10} textAnchor="middle" className="text-xs font-bold fill-red-600 pointer-events-none">BR ({Math.round(testPins.br.x)},{Math.round(testPins.br.y)})</text>
                 </g>
@@ -712,8 +779,9 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                       : tool === 'select' 
                         ? 'cursor-move hover:stroke-blue-500' 
                         : ''
-                  }`}
+                  } ${placingYouRoomId ? 'pointer-events-none' : ''}`}
                   onMouseDown={(e) => {
+                    if (placingYouRoomId) return;
                     if (tool === 'select') {
                       e.stopPropagation();
                       setDraggingWallIndex(i);
@@ -721,6 +789,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                     }
                   }}
                   onClick={(e) => {
+                    if (placingYouRoomId) return;
                     if (tool === 'erase') {
                       e.stopPropagation();
                       const newWalls = [...walls];
@@ -759,8 +828,9 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                             : tool === 'select'
                               ? 'cursor-move hover:opacity-80'
                               : 'hover:opacity-80'
-                        }`}
+                        } ${placingYouRoomId ? 'pointer-events-none' : ''}`}
                         onMouseDown={(e) => {
+                          if (placingYouRoomId) return;
                           if (tool === 'select') {
                             e.stopPropagation();
                             setSelectedMappedRoomId(room.id);
@@ -769,6 +839,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                           }
                         }}
                         onClick={(e) => {
+                          if (placingYouRoomId) return;
                           if (tool === 'erase') {
                             e.stopPropagation();
                             if (confirm(`Remove ${room.name} from the map?`)) {
@@ -803,6 +874,28 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                         >
                           {room.name}
                         </text>
+
+                        {/* Optional per-room \"You\" marker inside the mapped room */}
+                        {typeof pos.you_x === 'number' && typeof pos.you_y === 'number' && (
+                          <g pointerEvents="none">
+                            <circle
+                              cx={pos.you_x}
+                              cy={pos.you_y}
+                              r="6"
+                              fill="#2563eb"
+                              stroke="white"
+                              strokeWidth="2"
+                            />
+                            <text
+                              x={pos.you_x}
+                              y={pos.you_y - 12}
+                              textAnchor="middle"
+                              className="text-[9px] font-semibold fill-blue-700 select-none"
+                            >
+                              You
+                            </text>
+                          </g>
+                        )}
                       </g>
                       
                       {/* Resize Handles (only if selected and in select mode) */}

@@ -825,9 +825,18 @@ export default function TabletDisplay() {
     </div>
   );
 
+  // Root + shell layout classes so we can target Amazon tablet specifically
+  const rootClassName = `full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn ${
+    isAmazon ? 'flex items-center justify-center' : ''
+  }`;
+
+  const shellClassName = `relative z-10 flex flex-col ${
+    isAmazon ? 'w-[1920px] h-[1200px] max-w-full max-h-full aspect-[16/10]' : 'h-full'
+  }`;
+
   return (
-    <div className={`full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`}>
-      <div className="relative z-10 h-full flex flex-col">
+    <div className={rootClassName}>
+      <div className={shellClassName}>
         {/* Header */}
         <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
           <button

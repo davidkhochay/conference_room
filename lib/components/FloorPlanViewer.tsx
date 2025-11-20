@@ -157,8 +157,10 @@ export default function FloorPlanViewer({
           {/* "You Are Here" Pin */}
           {currentMappedRoom && (() => {
             const pos = currentMappedRoom.map_position as any;
-            const centerX = pos.x + pos.width / 2;
-            const centerY = pos.y + pos.height / 2;
+            const hasCustomYou =
+              typeof pos.you_x === 'number' && typeof pos.you_y === 'number';
+            const centerX = hasCustomYou ? pos.you_x : pos.x + pos.width / 2;
+            const centerY = hasCustomYou ? pos.you_y : pos.y + pos.height / 2;
             const rippleRadius = Math.min(pos.width, pos.height) / 3;
             
             return (
