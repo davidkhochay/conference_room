@@ -40,8 +40,8 @@ export async function GET(
     const currentBooking = inProgressBooking || null;
 
     // Get upcoming scheduled bookings, including ones that started within the last 15 minutes
-    const graceMinutes = 10;
-    const windowStart = new Date(now.getTime() - 15 * 60 * 1000).toISOString();
+    const graceMinutes = 15;
+    const windowStart = new Date(now.getTime() - graceMinutes * 60 * 1000).toISOString();
 
     const { data: scheduledBookings } = await supabase
       .from('bookings')
