@@ -45,82 +45,62 @@ export default function TabletDisplay() {
   const router = useRouter();
 
   const [status, setStatus] = useState<RoomStatus | null>(null);
+  // ... existing state ...
   const [showMap, setShowMap] = useState(false);
   const [floor, setFloor] = useState<Floor | null>(null);
   const [floorRooms, setFloorRooms] = useState<Room[]>([]);
   const [roomStatuses, setRoomStatuses] = useState<Record<string, { roomId: string; isOccupied: boolean }>>({});
-  const [locationFloors, setLocationFloors] = useState<Floor[]>([]);
-  const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
 
   // ...
 
-  const fetchFloorData = async (floorId?: string) => {
+  const fetchFloorData = async () => {
     if (!status) return;
     try {
       // Get room details to find location_id/floor_id
       const roomRes = await fetch(`/api/rooms/${roomId}`);
       const roomData = await roomRes.json();
-
-      if (roomData.success) {
-        const locationId = roomData.data.location_id;
-
-        // Load all floors for this location so we can switch between them
-        const floorsRes = await fetch(`/api/admin/locations/${locationId}/floors`);
-        const floorsResult = await floorsRes.json();
-        if (floorsResult.success && Array.isArray(floorsResult.data)) {
-          setLocationFloors(floorsResult.data);
-        }
-
-        const effectiveFloorId = floorId || roomData.data.floor_id;
-        if (!effectiveFloorId) return;
-        setSelectedFloorId(effectiveFloorId);
-
-        // Fetch the selected floor
-        const floorRes = await fetch(
-          `/api/admin/locations/${locationId}/floors/${effectiveFloorId}`
-        );
+      
+      if (roomData.success && roomData.data.floor_id) {
+        // Fetch Floor
+        const floorRes = await fetch(`/api/admin/locations/${roomData.data.location_id}/floors/${roomData.data.floor_id}`);
         const floorResult = await floorRes.json();
         if (floorResult.success) {
           setFloor(floorResult.data);
-
-          // Fetch Rooms for this location (we will filter by floor below)
-          const roomsRes = await fetch(`/api/rooms?location_id=${locationId}`);
+          
+          // Fetch Rooms on this floor
+          const roomsRes = await fetch(`/api/rooms?location_id=${roomData.data.location_id}`);
           const roomsResult = await roomsRes.json();
           if (roomsResult.success) {
-            const roomsOnFloor: Room[] = roomsResult.data.filter(
-              (r: Room) => r.floor_id === effectiveFloorId
-            );
-            setFloorRooms(roomsOnFloor);
-
+            setFloorRooms(roomsResult.data);
+            
             // Fetch status for these rooms (parallel)
-            const statusPromises = roomsOnFloor.map((r: Room) =>
-              fetch(`/api/rooms/${r.id}/status`).then((res) => res.json())
+            const statusPromises = roomsResult.data.map((r: Room) => 
+              fetch(`/api/rooms/${r.id}/status`).then(res => res.json())
             );
             const statuses = await Promise.all(statusPromises);
-
-            const statusMap: Record<string, { roomId: string; isOccupied: boolean }> = {};
+            
+            const statusMap: Record<string, any> = {};
             statuses.forEach((s: any) => {
-              if (s.success) {
-                statusMap[s.data.room_id] = {
-                  roomId: s.data.room_id,
-                  isOccupied: s.data.is_occupied,
-                };
-              }
+               if (s.success) {
+                 statusMap[s.data.room_id] = {
+                   roomId: s.data.room_id,
+                   isOccupied: s.data.is_occupied
+                 };
+               }
             });
             setRoomStatuses(statusMap);
           }
         }
       }
     } catch (err) {
-      console.error('Failed to load floor map', err);
+      console.error("Failed to load floor map", err);
     }
   };
 
   useEffect(() => {
     if (showMap) {
-      fetchFloorData(selectedFloorId || undefined);
+      fetchFloorData();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showMap, roomId]);
 
 
@@ -130,8 +110,6 @@ export default function TabletDisplay() {
   const [showQR, setShowQR] = useState(false);
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
-  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
-  const [selectedRoomName, setSelectedRoomName] = useState<string | null>(null);
   const [bookingForm, setBookingForm] = useState({
     hostId: '',
     attendeeIds: [] as string[],
@@ -276,21 +254,14 @@ export default function TabletDisplay() {
     }
   };
 
-  const handleQuickBookClick = (
-    duration = 30,
-    opts?: { roomId?: string; roomName?: string }
-  ) => {
+  const handleQuickBookClick = (duration: number) => {
     setSelectedDuration(duration);
-    setSelectedRoomId(opts?.roomId || roomId);
-    setSelectedRoomName(opts?.roomName || status?.room_name || null);
     setShowBookingForm(true);
   };
 
   const handleCancelBooking = () => {
     setShowBookingForm(false);
     setSelectedDuration(null);
-    setSelectedRoomId(null);
-    setSelectedRoomName(null);
     setBookingForm({ hostId: '', attendeeIds: [] });
     setSearchTerm('');
     setAttendeeSearch('');
@@ -305,23 +276,14 @@ export default function TabletDisplay() {
     setBookingInProgress(true);
     try {
       const now = new Date();
-      const targetRoomId = selectedRoomId || roomId;
-
-      // Never overlap existing bookings on the *current* room: clamp duration
-      // to the gap before the next booking, but only when we're booking this
-      // tablet's room. For other rooms (selected from the floor map), we let
-      // the backend + Google Calendar enforce conflicts.
+      // Never overlap existing bookings: clamp duration to the gap before the next booking
       let effectiveDuration = selectedDuration;
-      if (!selectedRoomId && nextBooking) {
+      if (nextBooking) {
         const nextStart = new Date(nextBooking.start_time);
-        const diffMinutes = Math.floor(
-          (nextStart.getTime() - now.getTime()) / (1000 * 60)
-        );
+        const diffMinutes = Math.floor((nextStart.getTime() - now.getTime()) / (1000 * 60));
 
         if (diffMinutes <= 0) {
-          alert(
-            'This room is booked very soon. Quick booking is not available right now.'
-          );
+          alert('This room is booked very soon. Quick booking is not available right now.');
           setBookingInProgress(false);
           return;
         }
@@ -361,7 +323,7 @@ export default function TabletDisplay() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          room_id: targetRoomId,
+          room_id: roomId,
           host_user_id: bookingForm.hostId,
           title,
           start_time: now.toISOString(),
@@ -487,7 +449,7 @@ export default function TabletDisplay() {
   const isAvailable = !status.is_occupied || justReleased;
   const bookingUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/book/room/${roomId}`;
 
-  // Check if we're within ±15 minutes of an event start time
+  // Check if we're within ±10 minutes of an event start time
   const isCheckInWindow = () => {
     if (!status.current_booking && status.next_bookings.length > 0) {
       const now = new Date();
@@ -495,8 +457,8 @@ export default function TabletDisplay() {
       const startTime = new Date(nextBooking.start_time);
       const timeDiff = (startTime.getTime() - now.getTime()) / (1000 * 60); // minutes
       
-      // Within 15 minutes before/after the event start
-      return timeDiff >= -15 && timeDiff <= 15;
+      // Within 10 minutes before the event
+      return timeDiff >= -10 && timeDiff <= 10;
     }
     return false;
   };
@@ -803,10 +765,7 @@ export default function TabletDisplay() {
 
   const isComputer = device === 'computer';
   const isAmazon = device === 'amazon';
-  // For Amazon tablets we keep a modest gap between the main buttons and the
-  // bookings strip so it feels anchored toward the bottom without a huge jump
-  // when there are no upcoming bookings.
-  const bookingsOffsetClass = isAmazon ? 'mt-8' : isComputer ? 'mt-28' : 'mt-20';
+  const bookingsOffsetClass = isAmazon ? 'mt-4' : isComputer ? 'mt-28' : 'mt-20';
 
   const releaseMinutesToEnd = status?.current_booking
     ? Math.round(
@@ -866,29 +825,27 @@ export default function TabletDisplay() {
     </div>
   );
 
-  // Root + shell layout classes.
-  // We let the tablet layout fully occupy the screen (no gutters) and pin it
-  // to the viewport so there is no bleed-through of the page background.
-  const rootClassName = `tablet-root full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`;
+  // Root + shell layout classes - One Screen Layout
+  const rootClassName = `h-dvh w-screen overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn flex flex-col`;
 
-  const shellClassName = 'relative z-10 flex flex-col w-full h-full';
+  const shellClassName = `relative z-10 flex-1 flex flex-col w-full h-full`;
 
   return (
     <div className={rootClassName}>
       <div className={shellClassName}>
         {/* Header */}
-        <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
+        <div className="flex-none px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
           <button
             onClick={() => setShowMap(true)}
             className={`${getFloorMapBgColor()} hover:opacity-80 text-gray-900 text-xl font-medium transition-all px-8 py-4 rounded-full tablet-shadow`}
           >
             Floor map
           </button>
-          {isAmazon && (
-            <div className="flex-1 flex justify-center">
+          
+          <div className="flex-1 flex justify-center">
               {renderFeatureBadges()}
-            </div>
-          )}
+          </div>
+
           <div className="text-right">
             <div className="text-3xl font-normal text-gray-900">
               {currentTime.toLocaleTimeString('en-US', {
@@ -900,16 +857,13 @@ export default function TabletDisplay() {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Main Content - Centered */}
         <div
-          className={`flex-1 flex flex-col items-center px-12 tablet-btn justify-center`}
+          className="flex-1 flex flex-col items-center justify-center px-12 tablet-btn"
         >
-          {/* Feature / capacity badges (non-Amazon layouts) */}
-          {!isAmazon && renderFeatureBadges('mb-12')}
-
           {/* Room Name */}
           <h1
-            className={`${isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'} font-bold text-gray-900 mb-12 text-center tablet-btn`}
+            className="text-8xl font-bold text-gray-900 mb-12 text-center tablet-btn"
           >
             {status.room_name}
           </h1>
@@ -919,30 +873,30 @@ export default function TabletDisplay() {
             {status.is_occupied && statusInfo.subtitle ? (
               <>
                 <h2
-                  className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold ${getTextColor()} mb-4`}
+                  className={`text-6xl font-semibold ${getTextColor()} mb-4`}
                 >
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} ${getTextColor()}`}>
+                  <p className={`text-4xl ${getTextColor()}`}>
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : showCheckIn && statusInfo.title ? (
               <>
-                <h2 className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold text-black mb-4`}>
+                <h2 className="text-6xl font-semibold text-black mb-4">
                   {statusInfo.subtitle} - {statusInfo.title}
                 </h2>
                 {statusInfo.host && (
-                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} text-black`}>
+                  <p className="text-4xl text-black">
                     by {statusInfo.host}
                   </p>
                 )}
               </>
             ) : (
               <h2
-                className={`${isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'} font-semibold text-white`}
+                className="text-7xl font-semibold text-white"
               >
                 {statusInfo.title}
               </h2>
@@ -955,11 +909,11 @@ export default function TabletDisplay() {
               hideActions ? 'opacity-0 translate-y-3 pointer-events-none' : 'opacity-100 translate-y-0'
             }`}
           >
-            {/* Green: quick book – single CTA; duration is chosen in the popup */}
+            {/* Green: quick book */}
             {isAvailable && !showCheckIn && !showBookingForm && (
               <button
-                onClick={() => handleQuickBookClick()}
-                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105 text-2xl font-semibold"
+                onClick={() => handleQuickBookClick(30)}
+                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
               >
                 Book Now
               </button>
@@ -997,68 +951,52 @@ export default function TabletDisplay() {
           </div>
         </div>
 
-        {/* Bottom Section - Next Bookings */}
-        {filteredDayBookings.length > 0 && (
-          <div
-            className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
-              isAmazon ? 'py-4' : 'py-8'
-            } tablet-btn`}
-          >
-            <div
-              ref={eventsScrollRef}
-              className="max-w-7xl mx-auto max-h-64 overflow-y-auto space-y-5 pb-8 pr-24 tablet-btn no-scrollbar"
-            >
-              {filteredDayBookings.map((booking) => {
-                const isTapEnabled =
-                  isAvailable && !showCheckIn && isToday(selectedDate);
+        {/* Bottom Section - Next Booking (Single Only) */}
+        <div
+          className={`${getScheduleBgColor()} backdrop-blur-sm px-12 py-8 tablet-btn flex-none`}
+        >
+          <div className="max-w-7xl mx-auto tablet-btn">
+            {/* Only show the very first upcoming booking */}
+            {filteredDayBookings.slice(0, 1).map((booking) => {
+              const isTapEnabled =
+                isAvailable && !showCheckIn && isToday(selectedDate);
 
-                return (
-                  <button
-                    key={booking.id}
-                    type="button"
-                    onClick={
-                      isTapEnabled ? () => handleCheckIn(booking.id) : undefined
-                    }
-                    className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
-                      isTapEnabled
-                        ? 'active:scale-[0.99] cursor-pointer'
-                        : 'cursor-default'
-                    } transition-transform`}
-                  >
-                    <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
-                      <span>
-                        {formatTime(booking.start_time)}-
-                        {formatTime(booking.end_time)}
-                      </span>
-                      <span>•</span>
-                      <Users className="w-6 h-6" />
-                      <span>{booking.attendee_count}</span>
-                    </div>
-                    <div className="text-gray-900 text-3xl font-bold tablet-btn">
-                      {booking.title}{' '}
-                      {booking.host_name && <>by {booking.host_name}</>}
-                    </div>
-                    {isTapEnabled && (
-                      <div className="mt-1 text-base text-gray-900/80 tablet-btn">
-                        Tap to check in
-                      </div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+              return (
+              <button
+                key={booking.id}
+                type="button"
+                  onClick={isTapEnabled ? () => handleCheckIn(booking.id) : undefined}
+                  className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
+                    isTapEnabled ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'
+                  } transition-transform`}
+              >
+                <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
+                    <span>
+                      {formatTime(booking.start_time)}-{formatTime(booking.end_time)}
+                    </span>
+                  <span>•</span>
+                  <Users className="w-6 h-6" />
+                  <span>{booking.attendee_count}</span>
+                </div>
+                <div className="text-gray-900 text-3xl font-bold tablet-btn">
+                    {booking.title}{' '}
+                    {booking.host_name && <>by {booking.host_name}</>}
+                </div>
+                  {isTapEnabled && (
+                <div className="mt-1 text-base text-gray-900/80 tablet-btn">
+                  Tap to check in
+                </div>
+                  )}
+              </button>
+              );
+            })}
+            {filteredDayBookings.length === 0 && (
+              <div className="text-center text-gray-700 text-2xl py-4">
+                No more bookings today
+              </div>
+            )}
           </div>
-        )}
-
-        {/* When there are no upcoming bookings, show a subtle message on the
-            main background instead of a full-width bottom bar. */}
-        {filteredDayBookings.length === 0 && (
-          <div className={`${bookingsOffsetClass} pb-8 tablet-btn`}>
-            <div className="text-center text-gray-900/80 text-2xl">
-              No more bookings today
-            </div>
-          </div>
-        )}
+        </div>
 
         {/* Floating Settings Button (bottom-right, all states) */}
         <button
@@ -1089,26 +1027,7 @@ export default function TabletDisplay() {
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
             <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
               <div className="text-center text-3xl font-bold text-gray-900 mb-2">
-                {selectedDuration
-                  ? `Book ${selectedRoomName || status.room_name} for ${selectedDuration} minutes`
-                  : `Book ${selectedRoomName || status.room_name}`}
-              </div>
-              {/* Duration picker inside the modal */}
-              <div className="flex justify-center gap-3 mb-4">
-                {[15, 30, 45, 60].map((minutes) => (
-                  <button
-                    key={minutes}
-                    type="button"
-                    onClick={() => setSelectedDuration(minutes)}
-                    className={`px-4 py-2 rounded-full text-sm font-semibold border ${
-                      selectedDuration === minutes
-                        ? 'bg-gray-900 text-white border-gray-900'
-                        : 'bg-gray-100 text-gray-800 border-gray-300'
-                    }`}
-                  >
-                    {minutes} min
-                  </button>
-                ))}
+                Book for {selectedDuration} minutes
               </div>
               <div className="text-center text-lg text-gray-600 mb-8">
                 Starting now
@@ -1291,29 +1210,7 @@ export default function TabletDisplay() {
         {showMap && (
           <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-8">
              <div className="bg-white rounded-3xl overflow-hidden shadow-2xl w-full h-full relative flex flex-col">
-                <div className="absolute top-4 right-4 z-10 flex items-center gap-4">
-                  {/* Floor selector (if multiple floors) */}
-                  {locationFloors.length > 1 && (
-                    <div className="bg-white/90 rounded-full px-4 py-2 shadow-lg flex items-center gap-2">
-                      {locationFloors.map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedFloorId(f.id);
-                            fetchFloorData(f.id);
-                          }}
-                          className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            selectedFloorId === f.id
-                              ? 'bg-gray-900 text-white'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {f.name || `Floor ${f.level}`}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                <div className="absolute top-4 right-4 z-10">
                   <button 
                     onClick={() => setShowMap(false)}
                     className="bg-gray-900 text-white p-4 rounded-full shadow-lg hover:bg-black transition-colors"
@@ -1330,21 +1227,6 @@ export default function TabletDisplay() {
                       roomStatuses={roomStatuses}
                       currentRoomId={roomId}
                       showTestPins={false}
-                      onRoomClick={(clickedRoomId) => {
-                        const statusInfo = roomStatuses[clickedRoomId];
-                        // Only allow booking if the room is not occupied
-                        if (statusInfo && statusInfo.isOccupied) {
-                          return;
-                        }
-                        const room = floorRooms.find((r) => r.id === clickedRoomId);
-                        if (!room) return;
-                        setShowMap(false);
-                        // Default to 30 minutes when booking from map; user can pick a different option
-                        handleQuickBookClick(30, {
-                          roomId: room.id,
-                          roomName: room.name,
-                        });
-                      }}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center text-3xl text-gray-400 font-medium">
@@ -1359,4 +1241,5 @@ export default function TabletDisplay() {
     </div>
   );
 }
+
 
