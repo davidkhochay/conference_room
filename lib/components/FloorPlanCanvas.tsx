@@ -41,7 +41,6 @@ export default function FloorPlanCanvas({
           src={floor.image_url}
           alt={floor.name}
           className="absolute inset-0 w-full h-full object-contain opacity-50 pointer-events-none"
-          style={{ imageRendering: 'high-quality' }}
         />
       )}
 

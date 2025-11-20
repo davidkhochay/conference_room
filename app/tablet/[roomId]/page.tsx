@@ -1230,6 +1230,7 @@ export default function TabletDisplay() {
                       rooms={floorRooms}
                       roomStatuses={roomStatuses}
                       currentRoomId={roomId}
+                      showTestPins={false}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center text-3xl text-gray-400 font-medium">

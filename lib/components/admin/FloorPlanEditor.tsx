@@ -82,6 +82,35 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
     }
   }, [selectedFloor]);
 
+  // Ensure the logical floor width/height matches the actual floorplan image
+  // aspect ratio so that the editor and tablet/map views line up perfectly.
+  useEffect(() => {
+    if (!selectedFloor || !selectedFloor.image_url) return;
+
+    const img = new Image();
+    img.onload = () => {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+
+      const aspect = img.naturalHeight / img.naturalWidth;
+      const baseWidth = 1000;
+      const newWidth = baseWidth;
+      const newHeight = Math.round(baseWidth * aspect);
+
+      if (selectedFloor.width === newWidth && selectedFloor.height === newHeight) {
+        return;
+      }
+
+      setFloors(prev =>
+        prev.map(f =>
+          f.id === selectedFloor.id
+            ? { ...f, width: newWidth, height: newHeight }
+            : f
+        )
+      );
+    };
+    img.src = selectedFloor.image_url;
+  }, [selectedFloor?.id, selectedFloor?.image_url, selectedFloor?.width, selectedFloor?.height]);
+
   const handleCreateFloor = async () => {
     const name = prompt('Enter floor name (e.g. "Floor 2")');
     if (!name) return;
@@ -891,6 +920,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                 floor={selectedFloor}
                 rooms={rooms}
                 roomStatuses={{}}
+                showTestPins={false}
               />
             </div>
           </div>

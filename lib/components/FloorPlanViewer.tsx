@@ -15,6 +15,7 @@ interface FloorPlanViewerProps {
   roomStatuses: Record<string, RoomStatus>;
   currentRoomId?: string;
   onRoomClick?: (roomId: string) => void;
+  showTestPins?: boolean;
 }
 
 export default function FloorPlanViewer({ 
@@ -22,7 +23,8 @@ export default function FloorPlanViewer({
   rooms, 
   roomStatuses, 
   currentRoomId, 
-  onRoomClick 
+  onRoomClick,
+  showTestPins = true,
 }: FloorPlanViewerProps) {
   const walls = React.useMemo(() => {
     try {
@@ -55,8 +57,8 @@ export default function FloorPlanViewer({
     <div className="relative w-full h-full bg-gray-50 flex items-center justify-center overflow-auto p-8">
       {/* Shared canvas keeps scaling identical to editor and tablet views */}
       <FloorPlanCanvas floor={floor}>
-          {/* Test Pins - Saved from Editor */}
-          {testPins && (
+          {/* Test Pins - Saved from Editor (optional) */}
+          {showTestPins && testPins && (
             <g>
               {/* Top-left */}
               <g>
@@ -117,17 +119,6 @@ export default function FloorPlanViewer({
                 onClick={() => onRoomClick?.(room.id)}
                 className={`cursor-pointer transition-all duration-200 ${onRoomClick ? 'hover:opacity-80' : ''}`}
               >
-                {isCurrent && (
-                  <circle 
-                    cx={pos.x + pos.width / 2} 
-                    cy={pos.y + pos.height / 2} 
-                    r={Math.min(pos.width, pos.height) / 3}
-                    className="animate-ping origin-center"
-                    fill={fillColor}
-                    opacity="0.75"
-                  />
-                )}
-
                 <rect
                   x={pos.x}
                   y={pos.y}
@@ -168,9 +159,17 @@ export default function FloorPlanViewer({
             const pos = currentMappedRoom.map_position as any;
             const centerX = pos.x + pos.width / 2;
             const centerY = pos.y + pos.height / 2;
+            const rippleRadius = Math.min(pos.width, pos.height) / 3;
             
             return (
               <g transform={`translate(${centerX}, ${centerY})`}>
+                {/* Ripple is anchored exactly to the same center as the marker */}
+                <circle
+                  r={rippleRadius}
+                  className="animate-ping"
+                  fill="#2563eb"
+                  opacity="0.3"
+                />
                 <circle r="8" fill="#2563eb" stroke="white" strokeWidth="2" />
                 <text y="-15" textAnchor="middle" className="text-xs font-bold fill-blue-700">You</text>
               </g>
