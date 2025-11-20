@@ -1000,55 +1000,67 @@ export default function TabletDisplay() {
         </div>
 
         {/* Bottom Section - Next Bookings */}
-        <div
-          className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
-            isAmazon ? 'py-4' : 'py-8'
-          } tablet-btn`}
-        >
+        {filteredDayBookings.length > 0 && (
           <div
-            ref={eventsScrollRef}
-            className="max-w-7xl mx-auto max-h-64 overflow-y-auto space-y-5 pb-8 pr-24 tablet-btn no-scrollbar"
+            className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
+              isAmazon ? 'py-4' : 'py-8'
+            } tablet-btn`}
           >
-            {filteredDayBookings.map((booking) => {
-              const isTapEnabled =
-                isAvailable && !showCheckIn && isToday(selectedDate);
+            <div
+              ref={eventsScrollRef}
+              className="max-w-7xl mx-auto max-h-64 overflow-y-auto space-y-5 pb-8 pr-24 tablet-btn no-scrollbar"
+            >
+              {filteredDayBookings.map((booking) => {
+                const isTapEnabled =
+                  isAvailable && !showCheckIn && isToday(selectedDate);
 
-              return (
-              <button
-                key={booking.id}
-                type="button"
-                  onClick={isTapEnabled ? () => handleCheckIn(booking.id) : undefined}
-                  className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
-                    isTapEnabled ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'
-                  } transition-transform`}
-              >
-                <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
-                    <span>
-                      {formatTime(booking.start_time)}-{formatTime(booking.end_time)}
-                    </span>
-                  <span>•</span>
-                  <Users className="w-6 h-6" />
-                  <span>{booking.attendee_count}</span>
-                </div>
-                <div className="text-gray-900 text-3xl font-bold tablet-btn">
-                    {booking.title}{' '}
-                    {booking.host_name && <>by {booking.host_name}</>}
-                </div>
-                  {isTapEnabled && (
-                <div className="mt-1 text-base text-gray-900/80 tablet-btn">
-                  Tap to check in
-                </div>
-                  )}
-              </button>
-              );
-            })}
-            {filteredDayBookings.length === 0 && (
-              <div className="text-center text-gray-700 text-2xl py-4">
-                No more bookings today
-              </div>
-            )}
+                return (
+                  <button
+                    key={booking.id}
+                    type="button"
+                    onClick={
+                      isTapEnabled ? () => handleCheckIn(booking.id) : undefined
+                    }
+                    className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
+                      isTapEnabled
+                        ? 'active:scale-[0.99] cursor-pointer'
+                        : 'cursor-default'
+                    } transition-transform`}
+                  >
+                    <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
+                      <span>
+                        {formatTime(booking.start_time)}-
+                        {formatTime(booking.end_time)}
+                      </span>
+                      <span>•</span>
+                      <Users className="w-6 h-6" />
+                      <span>{booking.attendee_count}</span>
+                    </div>
+                    <div className="text-gray-900 text-3xl font-bold tablet-btn">
+                      {booking.title}{' '}
+                      {booking.host_name && <>by {booking.host_name}</>}
+                    </div>
+                    {isTapEnabled && (
+                      <div className="mt-1 text-base text-gray-900/80 tablet-btn">
+                        Tap to check in
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* When there are no upcoming bookings, show a subtle message on the
+            main background instead of a full-width bottom bar. */}
+        {filteredDayBookings.length === 0 && (
+          <div className={`${bookingsOffsetClass} pb-8 tablet-btn`}>
+            <div className="text-center text-gray-900/80 text-2xl">
+              No more bookings today
+            </div>
+          </div>
+        )}
 
         {/* Floating Settings Button (bottom-right, all states) */}
         <button
