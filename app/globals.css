@@ -25,6 +25,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 /* Tablet-specific button typography (Fredoka) */
 .tablet-btn {
   font-family: var(--font-fredoka), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -57,7 +62,19 @@ body {
 
 /* Better full-height behavior on mobile/tablet (including Amazon Fire) */
 .full-viewport {
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   width: 100vw;
+}
+
+@supports (height: 100svh) {
+  .full-viewport {
+    height: 100svh;
+  }
+}
+
+.tablet-root {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
 }

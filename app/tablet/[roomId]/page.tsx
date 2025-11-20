@@ -276,7 +276,10 @@ export default function TabletDisplay() {
     }
   };
 
-  const handleQuickBookClick = (duration: number, opts?: { roomId?: string; roomName?: string }) => {
+  const handleQuickBookClick = (
+    duration = 30,
+    opts?: { roomId?: string; roomName?: string }
+  ) => {
     setSelectedDuration(duration);
     setSelectedRoomId(opts?.roomId || roomId);
     setSelectedRoomName(opts?.roomName || status?.room_name || null);
@@ -864,9 +867,9 @@ export default function TabletDisplay() {
   );
 
   // Root + shell layout classes.
-  // We let the tablet layout fully occupy the screen on Amazon (no max-width)
-  // so there are no side gutters when the browser chrome is hidden.
-  const rootClassName = `full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`;
+  // We let the tablet layout fully occupy the screen (no gutters) and pin it
+  // to the viewport so there is no bleed-through of the page background.
+  const rootClassName = `tablet-root full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`;
 
   const shellClassName = 'relative z-10 flex flex-col w-full h-full';
 
@@ -952,19 +955,14 @@ export default function TabletDisplay() {
               hideActions ? 'opacity-0 translate-y-3 pointer-events-none' : 'opacity-100 translate-y-0'
             }`}
           >
-            {/* Green: quick book – show 4 standard durations */}
+            {/* Green: quick book – single CTA; duration is chosen in the popup */}
             {isAvailable && !showCheckIn && !showBookingForm && (
-              <div className="flex flex-wrap justify-center gap-4">
-                {[15, 30, 45, 60].map((minutes) => (
-                  <button
-                    key={minutes}
-                    onClick={() => handleQuickBookClick(minutes)}
-                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-10 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105 text-2xl font-semibold"
-                  >
-                    {minutes} min
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => handleQuickBookClick()}
+                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105 text-2xl font-semibold"
+              >
+                Book Now
+              </button>
             )}
 
             {/* Yellow: check-in for upcoming event */}
@@ -1091,9 +1089,11 @@ export default function TabletDisplay() {
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
             <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
               <div className="text-center text-3xl font-bold text-gray-900 mb-2">
-                Book {selectedRoomName || status.room_name} for {selectedDuration} minutes
+                {selectedDuration
+                  ? `Book ${selectedRoomName || status.room_name} for ${selectedDuration} minutes`
+                  : `Book ${selectedRoomName || status.room_name}`}
               </div>
-              {/* Allow users to adjust duration inside the modal as well */}
+              {/* Duration picker inside the modal */}
               <div className="flex justify-center gap-3 mb-4">
                 {[15, 30, 45, 60].map((minutes) => (
                   <button
