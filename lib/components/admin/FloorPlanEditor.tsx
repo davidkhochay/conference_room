@@ -5,7 +5,9 @@ import { Floor, Room } from '@/lib/types/database.types';
 import { Button } from '@/lib/components/ui/Button';
 import { Input } from '@/lib/components/ui/Input';
 import { ImageUpload } from '@/lib/components/ImageUpload';
-import { Trash2 } from 'lucide-react';
+import FloorPlanCanvas from '@/lib/components/FloorPlanCanvas';
+import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
+import { Trash2, X } from 'lucide-react';
 
 interface FloorPlanEditorProps {
   locationId: string;
@@ -43,6 +45,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
   });
   const [draggingPin, setDraggingPin] = useState<string | null>(null);
   const [placingPin, setPlacingPin] = useState<string | null>(null);
+  const [showTabletPreview, setShowTabletPreview] = useState(false);
   
   // Calculate center from the 4 corner pins
   const centerPin = {
@@ -570,7 +573,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                 })}
               </div>
             </div>
-            
+
             <div>
               <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">Background</h4>
               <ImageUpload
@@ -578,6 +581,25 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                 onChange={updateFloorImage}
                 label="Floor plan image"
               />
+            </div>
+
+            <div className="mt-8 border-t border-gray-200 pt-4">
+              <h4 className="text-xs font-semibold text-gray-500 mb-2 uppercase">
+                Tablet Preview
+              </h4>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Open a live preview of how this floor looks on wall tablets so you can confirm room boxes line up.
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full justify-center"
+                type="button"
+                onClick={() => setShowTabletPreview(true)}
+                disabled={!selectedFloor}
+              >
+                Open tablet preview
+              </Button>
             </div>
           </div>
         )}
@@ -593,35 +615,18 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
       <div className="flex-1 bg-gray-100 relative overflow-auto flex items-center justify-center p-8">
         {selectedFloor ? (
           <>
-            {/* 
-              The inner container mirrors FloorPlanViewer: it defines the visual
-              aspect ratio for the floor and the SVG uses a viewBox based on
-              selectedFloor.width/height so all coordinates line up exactly with
-              the tablet /maps views regardless of display size.
-            */}
-            <div
-              className="relative bg-white shadow-lg w-full h-full max-w-full max-h-full"
-              style={{
-                aspectRatio: `${selectedFloor.width} / ${selectedFloor.height}`,
+            {/* Shared canvas keeps scaling identical to viewer/tablet */}
+            <FloorPlanCanvas
+              floor={selectedFloor}
+              svgRef={svgRef}
+              svgProps={{
+                className: tool === 'select' ? '' : 'cursor-crosshair',
+                onMouseDown: handleMouseDown,
+                onMouseMove: handleMouseMove,
+                onMouseUp: handleMouseUp,
+                onMouseLeave: handleMouseUp,
               }}
             >
-              {selectedFloor.image_url && (
-                <img 
-                  src={selectedFloor.image_url} 
-                  alt="Floor plan"
-                  className="absolute inset-0 w-full h-full object-contain opacity-50 pointer-events-none"
-                />
-              )}
-              <svg
-                ref={svgRef}
-                viewBox={`0 0 ${selectedFloor.width} ${selectedFloor.height}`}
-                preserveAspectRatio="xMidYMid meet"
-                className={`absolute inset-0 w-full h-full ${tool === 'select' ? '' : 'cursor-crosshair'}`}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              >
               {/* Grid lines (optional) */}
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -854,8 +859,7 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
                   strokeDasharray="4 4"
                 />
               )}
-              </svg>
-            </div>
+            </FloorPlanCanvas>
           </>
         ) : (
           <div className="text-gray-400 text-center">
@@ -863,6 +867,35 @@ export default function FloorPlanEditor({ locationId, initialFloors, initialRoom
           </div>
         )}
       </div>
+      {/* Tablet-style preview modal */}
+      {showTabletPreview && selectedFloor && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-8">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl h-[80vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Tablet preview</h2>
+                <p className="text-xs text-gray-500">
+                  This shows the same floor plan layout used on tablets so you can verify room mapping.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTabletPreview(false)}
+                className="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 bg-gray-100">
+              <FloorPlanViewer
+                floor={selectedFloor}
+                rooms={rooms}
+                roomStatuses={{}}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
