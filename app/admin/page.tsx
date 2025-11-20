@@ -8,6 +8,7 @@ interface Booking {
   id: string;
   title: string;
   start_time: string;
+  end_time: string;
   status: string;
   room: {
     name: string;
@@ -15,6 +16,53 @@ interface Booking {
   host: {
     name: string;
   } | null;
+}
+
+function BookingColumn({
+  title,
+  bookings,
+  renderRow,
+}: {
+  title: string;
+  bookings: Booking[];
+  renderRow: (booking: Booking) => React.ReactNode;
+}) {
+  const visible = bookings.slice(0, 10);
+
+  let titleColor = 'text-gray-800';
+  let laneAccent = 'border-t-4 border-t-gray-200';
+
+  if (title === 'In use') {
+    titleColor = 'text-rose-600';
+    laneAccent = 'border-t-4 border-t-rose-300';
+  } else if (title === 'Upcoming') {
+    titleColor = 'text-amber-600';
+    laneAccent = 'border-t-4 border-t-amber-300';
+  } else if (title === 'Completed / cancelled') {
+    titleColor = 'text-emerald-600';
+    laneAccent = 'border-t-4 border-t-emerald-300';
+  }
+
+  return (
+    <div>
+      <h3 className={`text-sm font-semibold mb-3 ${titleColor}`}>{title}</h3>
+      {visible.length === 0 ? (
+        <div
+          className={`text-xs text-gray-500 bg-white rounded-2xl px-3 py-3 shadow-sm border border-gray-200 ${laneAccent}`}
+        >
+          None
+        </div>
+      ) : (
+        <div
+          className={`bg-white rounded-2xl px-3 py-3 shadow-sm border border-gray-200 ${laneAccent}`}
+        >
+          <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            {visible.map((b) => renderRow(b))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AdminDashboard() {
@@ -107,27 +155,112 @@ export default function AdminDashboard() {
     },
   ];
 
-  const getStatusStyles = (status: string) => {
-    const now = new Date();
-    const normalized = status.toLowerCase();
+  const getStatusStyles = (booking: Booking) => {
+    const normalized = booking.status.toLowerCase();
 
-    if (normalized === 'in_progress') {
-      return { label: 'in use', classes: 'bg-green-100 text-green-800' };
-    }
-
-    if (normalized === 'scheduled') {
-      return { label: 'upcoming', classes: 'bg-blue-100 text-blue-800' };
-    }
-
-    if (normalized === 'ended' || normalized === 'completed') {
-      return { label: 'completed', classes: 'bg-gray-100 text-gray-600' };
+    // Hard cancel states
+    if (normalized === 'no_show') {
+      return {
+        label: 'no show',
+        classes: 'bg-amber-50 text-amber-700 border border-amber-200',
+      };
     }
 
     if (normalized === 'cancelled') {
-      return { label: 'cancelled', classes: 'bg-red-100 text-red-700' };
+      return {
+        label: 'cancelled',
+        classes: 'bg-rose-50 text-rose-700 border border-rose-200',
+      };
     }
 
-    return { label: normalized, classes: 'bg-gray-100 text-gray-700' };
+    const start = new Date(booking.start_time);
+    const end = new Date(booking.end_time);
+    const now = new Date();
+
+    if (end < now || normalized === 'ended' || normalized === 'completed') {
+      return {
+        label: 'completed',
+        classes: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+      };
+    }
+
+    if (start <= now && now < end || normalized === 'in_progress') {
+      return {
+        label: 'in use',
+        classes: 'bg-rose-50 text-rose-700 border border-rose-200',
+      };
+    }
+
+    // Default: upcoming
+    return {
+      label: 'upcoming',
+      classes: 'bg-amber-50 text-amber-700 border border-amber-200',
+    };
+  };
+
+  const getStatusBucket = (booking: Booking): 'in_use' | 'upcoming' | 'completed_cancelled' => {
+    const normalized = booking.status.toLowerCase();
+
+    if (normalized === 'no_show' || normalized === 'cancelled') {
+      return 'completed_cancelled';
+    }
+
+    const start = new Date(booking.start_time);
+    const end = new Date(booking.end_time);
+    const now = new Date();
+
+    if (end < now || normalized === 'ended' || normalized === 'completed') {
+      return 'completed_cancelled';
+    }
+
+    if (start <= now && now < end || normalized === 'in_progress') {
+      return 'in_use';
+    }
+
+    return 'upcoming';
+  };
+
+  const renderBookingRow = (booking: Booking) => {
+    const { label, classes } = getStatusStyles(booking);
+
+    return (
+      <div
+        key={booking.id}
+        className="p-4 rounded-2xl bg-white hover:bg-gray-50 shadow-sm border border-gray-100 transition-colors"
+      >
+        {/* Title + status pill */}
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <h4 className="font-semibold text-gray-900 text-sm md:text-base flex-1">
+            {booking.title}
+          </h4>
+          <span
+            className={`px-3 py-1 text-[11px] font-semibold rounded-full whitespace-nowrap ${classes}`}
+          >
+            {label}
+          </span>
+        </div>
+
+        {/* Details row */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+          {booking.room && (
+            <span className="flex items-center">
+              <DoorOpen className="w-4 h-4 mr-1.5" />
+              {booking.room.name}
+            </span>
+          )}
+          {booking.host && (
+            <span className="flex items-center">
+              <Users className="w-4 h-4 mr-1.5" />
+              {booking.host.name}
+            </span>
+          )}
+          <span className="flex items-center">
+            <Clock className="w-4 h-4 mr-1.5" />
+            {formatDateTime(booking.start_time)}
+          </span>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -158,58 +291,50 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      <Card title="Recent bookings">
-          {loading ? (
-            <div className="text-gray-600 py-4">Loading...</div>
-          ) : recentBookings.length === 0 ? (
-            <div className="text-gray-600 py-4">No bookings yet</div>
-          ) : (
-            <div className="space-y-3">
-            {recentBookings.map((booking) => {
-              const { label, classes } = getStatusStyles(booking.status);
+      {/* Recent bookings - kanban-style by status */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Recent bookings
+          </h2>
+        </div>
+        {loading ? (
+          <div className="text-gray-600 py-4">Loading...</div>
+        ) : recentBookings.length === 0 ? (
+          <div className="text-gray-600 py-4">No bookings yet</div>
+        ) : (() => {
+          const inUse: Booking[] = [];
+          const upcoming: Booking[] = [];
+          const completedCancelled: Booking[] = [];
 
-              return (
-                <div
-                  key={booking.id}
-                  className="p-4 rounded-2xl bg-white/80 hover:bg-white tablet-shadow transition-colors"
-                >
-                  {/* Title + status pill */}
-                  <div className="flex items-start justify-between gap-3 mb-2">
-                    <h4 className="font-semibold text-gray-900 text-base md:text-lg flex-1">
-                      {booking.title}
-                    </h4>
-                    <span
-                      className={`px-3 py-1 text-[11px] font-semibold rounded-full whitespace-nowrap ${classes}`}
-                    >
-                      {label}
-                    </span>
-                  </div>
-                  
-                  {/* Details row */}
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-600">
-                    {booking.room && (
-                      <span className="flex items-center">
-                        <DoorOpen className="w-4 h-4 mr-1.5" />
-                        {booking.room.name}
-                      </span>
-                    )}
-                    {booking.host && (
-                      <span className="flex items-center">
-                        <Users className="w-4 h-4 mr-1.5" />
-                        {booking.host.name}
-                      </span>
-                    )}
-                    <span className="flex items-center">
-                      <Clock className="w-4 h-4 mr-1.5" />
-                      {formatDateTime(booking.start_time)}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+          recentBookings.forEach((booking) => {
+            const bucket = getStatusBucket(booking);
+            if (bucket === 'in_use') inUse.push(booking);
+            else if (bucket === 'upcoming') upcoming.push(booking);
+            else completedCancelled.push(booking);
+          });
+
+          return (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <BookingColumn
+                title="In use"
+                bookings={inUse}
+                renderRow={renderBookingRow}
+              />
+              <BookingColumn
+                title="Upcoming"
+                bookings={upcoming}
+                renderRow={renderBookingRow}
+              />
+              <BookingColumn
+                title="Completed / cancelled"
+                bookings={completedCancelled}
+                renderRow={renderBookingRow}
+              />
             </div>
-          )}
-        </Card>
+          );
+        })()}
+      </section>
     </div>
   );
 }

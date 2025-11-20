@@ -5,9 +5,17 @@ import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
 import { Input } from '@/lib/components/ui/Input';
 import { RoomCalendar } from '@/lib/components/RoomCalendar';
-import { ArrowLeft, Calendar, Clock, Users } from 'lucide-react';
+import {
+  ArrowLeft,
+  Calendar,
+  Clock,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+} from 'lucide-react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 interface Room {
   id: string;
@@ -24,9 +32,304 @@ interface Room {
   };
 }
 
+interface DatePickerFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function DatePickerField({ label, value, onChange }: DatePickerFieldProps) {
+  const parsed = value ? new Date(value) : new Date();
+  const [open, setOpen] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(
+    new Date(parsed.getFullYear(), parsed.getMonth(), 1)
+  );
+
+  const startOfMonth = new Date(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth(),
+    1
+  );
+  const endOfMonth = new Date(
+    currentMonth.getFullYear(),
+    currentMonth.getMonth() + 1,
+    0
+  );
+
+  const firstDayOfWeek = startOfMonth.getDay(); // 0 (Sun) - 6 (Sat)
+  const daysInMonth = endOfMonth.getDate();
+
+  const days: Array<Date | null> = [];
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    days.push(null);
+  }
+  for (let day = 1; day <= daysInMonth; day++) {
+    days.push(
+      new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day)
+    );
+  }
+
+  const monthLabel = currentMonth.toLocaleDateString(undefined, {
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const selectedDate = value ? new Date(value) : null;
+  const today = new Date();
+
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+
+  const displayValue = selectedDate
+    ? selectedDate.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })
+    : 'Pick a date';
+
+  const handleSelect = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    onChange(`${year}-${month}-${day}`);
+    setOpen(false);
+  };
+
+  return (
+    <div className="w-full">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label}
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <span className="text-sm text-gray-900">
+            {displayValue}
+          </span>
+          <Calendar className="w-4 h-4 text-gray-500" />
+        </button>
+
+        {open && (
+          <div className="absolute z-20 mt-2 w-72 rounded-2xl border border-gray-200 bg-white shadow-lg p-3">
+            <div className="flex items-center justify-between mb-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(
+                      currentMonth.getFullYear(),
+                      currentMonth.getMonth() - 1,
+                      1
+                    )
+                  )
+                }
+                className="p-1 rounded-md hover:bg-gray-100"
+              >
+                <ChevronLeft className="w-4 h-4 text-gray-700" />
+              </button>
+              <div className="text-sm font-medium text-gray-900">
+                {monthLabel}
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(
+                      currentMonth.getFullYear(),
+                      currentMonth.getMonth() + 1,
+                      1
+                    )
+                  )
+                }
+                className="p-1 rounded-md hover:bg-gray-100"
+              >
+                <ChevronRight className="w-4 h-4 text-gray-700" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-[11px] text-gray-500 mb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => (
+                <div key={d} className="text-center">
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-xs">
+              {days.map((date, idx) => {
+                if (!date) {
+                  return <div key={idx} />;
+                }
+
+                const isSelected =
+                  selectedDate && isSameDay(date, selectedDate);
+                const isTodayDate = isSameDay(date, today);
+
+                let classes =
+                  'w-8 h-8 flex items-center justify-center rounded-full cursor-pointer';
+
+                if (isSelected) {
+                  classes += ' bg-gray-900 text-white';
+                } else if (isTodayDate) {
+                  classes +=
+                    ' border border-gray-300 text-gray-900';
+                } else {
+                  classes +=
+                    ' text-gray-800 hover:bg-gray-100';
+                }
+
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => handleSelect(date)}
+                    className={classes}
+                  >
+                    {date.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-[11px] text-blue-600">
+              <button
+                type="button"
+                onClick={() => {
+                  onChange('');
+                  setOpen(false);
+                }}
+                className="hover:underline"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const year = now.getFullYear();
+                  const month = String(now.getMonth() + 1).padStart(
+                    2,
+                    '0'
+                  );
+                  const day = String(now.getDate()).padStart(2, '0');
+                  onChange(`${year}-${month}-${day}`);
+                  setCurrentMonth(
+                    new Date(now.getFullYear(), now.getMonth(), 1)
+                  );
+                  setOpen(false);
+                }}
+                className="hover:underline"
+              >
+                Today
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface TimePickerFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function TimePickerField({ label, value, onChange }: TimePickerFieldProps) {
+  return (
+    <div className="w-full">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        {label}
+      </label>
+      <div className="relative">
+        <Clock className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="time"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 bg-white"
+        />
+      </div>
+    </div>
+  );
+}
+
+interface DurationSelectProps {
+  value: number;
+  onChange: (value: number) => void;
+}
+
+function DurationSelect({ value, onChange }: DurationSelectProps) {
+  const [open, setOpen] = useState(false);
+
+  const options: { value: number; label: string }[] = [
+    { value: 15, label: '15 min' },
+    { value: 30, label: '30 min' },
+    { value: 45, label: '45 min' },
+    { value: 60, label: '1 hour' },
+    { value: 90, label: '1.5 hours' },
+    { value: 120, label: '2 hours' },
+    { value: 180, label: '3 hours' },
+    { value: 240, label: '4 hours' },
+  ];
+
+  const selected =
+    options.find((opt) => opt.value === value)?.label || 'Select duration';
+
+  return (
+    <div className="w-full">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Duration
+      </label>
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+        >
+          <span className="text-sm text-gray-900">{selected}</span>
+          <ChevronDown className="w-4 h-4 text-gray-500" />
+        </button>
+
+        {open && (
+          <div className="absolute z-20 mt-2 w-full max-h-64 overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-lg py-1">
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => {
+                  onChange(opt.value);
+                  setOpen(false);
+                }}
+                className={`w-full px-3 py-2 text-left text-sm ${
+                  opt.value === value
+                    ? 'bg-gray-900 text-white'
+                    : 'text-gray-800 hover:bg-gray-100'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function RoomBookingPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const roomId = params?.roomId as string;
+  const from = searchParams.get('from');
+  const backHref = from === 'public' ? '/book/public' : '/book';
 
   const [room, setRoom] = useState<Room | null>(null);
   const [loading, setLoading] = useState(true);
@@ -300,7 +603,7 @@ export default function RoomBookingPage() {
         <Card>
           <div className="text-center py-8">
             <p className="text-gray-600 mb-4">Room not found</p>
-            <Link href="/book">
+            <Link href={backHref}>
               <Button>Back to Rooms</Button>
             </Link>
           </div>
@@ -315,18 +618,14 @@ export default function RoomBookingPage() {
       <div className="max-w-5xl mx-auto px-6 pt-10 pb-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <Link href="/book">
+            <Link href={backHref}>
               <button className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
                 <ArrowLeft className="w-4 h-4" />
                 All rooms
               </button>
             </Link>
           </div>
-          <Link href="/">
-            <button className="hidden sm:flex tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 items-center gap-2">
-              Home
-            </button>
-          </Link>
+         
         </div>
       </div>
 
@@ -384,9 +683,9 @@ export default function RoomBookingPage() {
         </section>
 
         {/* Booking form + calendar */}
-        <section className="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+        <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Form */}
-          <div className="lg:col-span-3">
+          <div className="lg:col-span-4">
             <Card className="rounded-3xl bg-white tablet-shadow border-0">
               {success ? (
                 <div className="text-center py-10">
@@ -417,12 +716,12 @@ export default function RoomBookingPage() {
                     required
                   />
 
-                  {/* People: host left, attendees right */}
+                  {/* People: single column */}
                   <div className="space-y-3">
                     <h3 className="text-sm font-medium text-gray-900">
                       People
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                       {/* Host */}
                   <div>
                         <label className="block text-xs font-medium text-gray-700 mb-2 uppercase tracking-wide">
@@ -561,55 +860,36 @@ export default function RoomBookingPage() {
                     </div>
                   </div>
 
-                  {/* Date & duration */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <Input
+                  {/* Date & duration - single column */}
+                  <div className="grid grid-cols-1 gap-4">
+                    <DatePickerField
                       label="Date"
-                      type="date"
                       value={booking.date}
-                      onChange={(e) =>
-                        setBooking({ ...booking, date: e.target.value })
+                      onChange={(value) =>
+                        setBooking({ ...booking, date: value })
                       }
-                      required
                     />
 
-                    <Input
+                    <TimePickerField
                       label="Start"
-                      type="time"
                       value={booking.startTime}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         setBooking({
                           ...booking,
-                          startTime: e.target.value,
+                          startTime: value,
                         })
                       }
-                      required
                     />
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Duration
-                      </label>
-                      <select
-                        value={booking.duration}
-                        onChange={(e) =>
-                          setBooking({
-                            ...booking,
-                            duration: Number(e.target.value),
-                          })
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm bg-white"
-                      >
-                        <option value={15}>15 min</option>
-                        <option value={30}>30 min</option>
-                        <option value={45}>45 min</option>
-                        <option value={60}>1 hour</option>
-                        <option value={90}>1.5 hours</option>
-                        <option value={120}>2 hours</option>
-                        <option value={180}>3 hours</option>
-                        <option value={240}>4 hours</option>
-                      </select>
-                    </div>
+                    <DurationSelect
+                      value={booking.duration}
+                      onChange={(value) =>
+                        setBooking({
+                          ...booking,
+                          duration: value,
+                        })
+                      }
+                    />
                   </div>
 
                   {checkingAvailability && (
@@ -653,14 +933,14 @@ export default function RoomBookingPage() {
           </div>
 
           {/* Calendar */}
-          <div className="lg:col-span-2">
-            <Card className="rounded-3xl bg-white/80 tablet-shadow border-0">
+          <div className="lg:col-span-8">
+            <Card className="rounded-3xl bg-white/80 tablet-shadow border-0 h-full">
               <div className="flex items-center gap-2 mb-3">
                 <Clock className="w-4 h-4 text-gray-500" />
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
                   Schedule
                 </h3>
-        </div>
+              </div>
               <RoomCalendar
                 roomId={roomId}
                 roomName={room.name}

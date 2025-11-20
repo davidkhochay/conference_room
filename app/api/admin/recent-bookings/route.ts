@@ -5,11 +5,16 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = getServerAdminClient();
 
+    // Focus on bookings around "now" so the dashboard reflects real usage
+    const now = new Date();
+    const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
     const { data, error } = await supabase
       .from('bookings')
       .select('*, room:rooms(name), host:users(name)')
-      .order('created_at', { ascending: false })
-      .limit(5);
+      .gte('start_time', since)
+      .order('start_time', { ascending: false })
+      .limit(30);
 
     if (error) {
       return NextResponse.json(

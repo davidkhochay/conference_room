@@ -107,18 +107,6 @@ export default function AdminSettingsPage() {
                   >
                     General
                   </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
-                  >
-                    Booking rules
-                  </button>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
-                  >
-                    Tablet settings
-                  </button>
                 </nav>
               </div>
             </div>

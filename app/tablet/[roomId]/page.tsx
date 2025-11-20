@@ -214,6 +214,16 @@ export default function TabletDisplay() {
     return () => clearInterval(timer);
   }, []);
 
+  // Simple error banner for extend / other actions
+  const [banner, setBanner] = useState<{ type: 'error'; message: string } | null>(null);
+
+  const showErrorBanner = (message: string) => {
+    setBanner({ type: 'error', message });
+    setTimeout(() => {
+      setBanner((current) => (current?.message === message ? null : current));
+    }, 7000);
+  };
+
   // Reset "justReleased" flag once status shows room is free
   useEffect(() => {
     if (status && !status.is_occupied && justReleased) {
@@ -234,6 +244,17 @@ export default function TabletDisplay() {
     el.addEventListener('scroll', onScroll);
     return () => el.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Auto-release: if the current booking has passed its end time, end it automatically.
+  useEffect(() => {
+    if (!status?.current_booking || justReleased) return;
+
+    const end = new Date(status.current_booking.end_time);
+    if (currentTime > end && !pendingRelease) {
+      endMeeting();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.current_booking?.end_time, currentTime, justReleased, pendingRelease]);
 
   const fetchStatus = async () => {
     try {
@@ -500,6 +521,26 @@ export default function TabletDisplay() {
   const extendMeeting = async (additionalMinutes: number) => {
     if (!status?.current_booking) return;
 
+    // Check for conflict with the very next booking before hitting the API
+    const immediateNext = status.next_bookings[0];
+    if (immediateNext) {
+      const currentEnd = new Date(status.current_booking.end_time);
+      const requestedEnd = new Date(
+        currentEnd.getTime() + additionalMinutes * 60 * 1000
+      );
+      const nextStart = new Date(immediateNext.start_time);
+
+      if (requestedEnd > nextStart) {
+        const startLabel = formatTime(immediateNext.start_time);
+        const endLabel = formatTime(immediateNext.end_time);
+        const title = immediateNext.title || 'another meeting';
+        showErrorBanner(
+          `Cannot extend: "${title}" is booked from ${startLabel} to ${endLabel}.`
+        );
+        return;
+      }
+    }
+
     try {
       const response = await fetch(`/api/bookings/${status.current_booking.id}/extend`, {
         method: 'POST',
@@ -511,10 +552,11 @@ export default function TabletDisplay() {
       if (result.success) {
         await fetchStatus();
       } else {
-        alert(`Failed to extend: ${result.error?.message}`);
+        showErrorBanner(result.error?.message || 'Failed to extend booking.');
       }
     } catch (error) {
       console.error('Failed to extend meeting:', error);
+      showErrorBanner('Failed to extend booking.');
     }
   };
 
@@ -1165,8 +1207,7 @@ export default function TabletDisplay() {
         {/* Booking Form Modal (status view) */}
         {showBookingForm && !showMap && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
-            <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <div className="text-center text-3xl font-bold text-gray-900 mb-2">
+<div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full h-[80vh] overflow-y-auto">              <div className="text-center text-3xl font-bold text-gray-900 mb-2">
                 Book {bookingTarget?.roomName || status.room_name}
               </div>
               <div className="text-center text-lg text-gray-600 mb-6">
@@ -1454,8 +1495,7 @@ export default function TabletDisplay() {
               {showBookingForm && bookingTarget && (
                 <div className="absolute inset-x-0 bottom-0 pb-10 flex justify-center pointer-events-none">
                   <div className="pointer-events-auto w-full max-w-2xl px-6">
-                    <div className="bg-white rounded-3xl p-8 shadow-2xl max-h-[70vh] overflow-y-auto">
-                      <div className="text-center text-3xl font-bold text-gray-900 mb-2">
+                  <div className="bg-white rounded-3xl p-8 shadow-2xl h-[70vh] overflow-y-auto">                      <div className="text-center text-3xl font-bold text-gray-900 mb-2">
                         Book {bookingTarget.roomName}
                       </div>
                       <div className="text-center text-lg text-gray-600 mb-6">

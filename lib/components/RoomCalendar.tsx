@@ -192,7 +192,7 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
               </div>
 
         <div className="flex items-center gap-2">
-          {onSlotSelect && (
+          {onSlotSelect && !embedded && (
             <button
               type="button"
               onClick={handleAddForDay}
@@ -226,12 +226,20 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
             const end = new Date(booking.end_time);
             const now = new Date();
 
-            let statusLabel: 'in use' | 'upcoming' | 'completed' | 'cancelled' =
-              'upcoming';
+            let statusLabel:
+              | 'in use'
+              | 'upcoming'
+              | 'completed'
+              | 'cancelled'
+              | 'auto-cancelled' = 'upcoming';
             let chipClasses =
               'bg-blue-100 text-blue-800 border border-blue-200';
 
-            if (booking.status === 'cancelled') {
+            if (booking.status === 'no_show') {
+              statusLabel = 'auto-cancelled';
+              chipClasses =
+                'bg-red-50 text-red-700 border border-red-200';
+            } else if (booking.status === 'cancelled') {
               statusLabel = 'cancelled';
               chipClasses =
                 'bg-gray-100 text-gray-600 border border-gray-200';

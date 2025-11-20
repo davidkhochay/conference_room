@@ -53,7 +53,8 @@ export async function GET(
 
     let upcomingBookings = scheduledBookings || [];
 
-    // Auto-cancel the first scheduled booking if it's more than 10 minutes past its start time
+    // Auto-cancel the first scheduled booking as a no-show if it's more than
+    // `graceMinutes` past its start time without a check-in.
     if (upcomingBookings.length > 0) {
       const first = upcomingBookings[0];
       const startTime = new Date(first.start_time);
@@ -61,10 +62,22 @@ export async function GET(
 
       if (diffMinutes > graceMinutes) {
         try {
+          // Mark booking as a no-show
           await supabase
             .from('bookings')
-            .update({ status: 'cancelled' })
+            .update({ status: 'no_show' })
             .eq('id', first.id);
+
+          // Log to booking activity for analytics/audit
+          await supabase.from('booking_activity_log').insert({
+            booking_id: first.id,
+            action: 'no_show',
+            performed_by_user_id: null,
+            metadata: {
+              reason: 'auto_no_checkin',
+              grace_minutes: graceMinutes,
+            },
+          });
         } catch (e) {
           console.error('Failed to auto-cancel stale booking', e);
         }
