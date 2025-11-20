@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Floor, Room } from '@/lib/types/database.types';
-
+import FloorPlanCanvas from '@/lib/components/FloorPlanCanvas';
 interface RoomStatus {
   roomId: string;
   isOccupied: boolean;
@@ -53,32 +53,8 @@ export default function FloorPlanViewer({
 
   return (
     <div className="relative w-full h-full bg-gray-50 flex items-center justify-center overflow-auto p-8">
-      {/* 
-        The inner container defines the visual aspect ratio for the floor.
-        We always draw in the logical coordinate space [0,width] x [0,height]
-        via the SVG viewBox so that all map_position values line up across
-        editor, /maps and tablet views regardless of display resolution.
-      */}
-      <div
-        className="relative bg-white shadow-lg w-full h-full max-w-full max-h-full"
-        style={{
-          aspectRatio: `${floor.width} / ${floor.height}`,
-        }}
-      >
-        {floor.image_url && (
-          <img 
-            src={floor.image_url} 
-            alt={floor.name}
-            className="absolute inset-0 w-full h-full object-contain opacity-50 pointer-events-none"
-            style={{ imageRendering: 'high-quality' }}
-          />
-        )}
-        
-        <svg
-          viewBox={`0 0 ${floor.width} ${floor.height}`}
-          preserveAspectRatio="xMidYMid meet"
-          className="absolute inset-0 w-full h-full"
-        >
+      {/* Shared canvas keeps scaling identical to editor and tablet views */}
+      <FloorPlanCanvas floor={floor}>
           {/* Test Pins - Saved from Editor */}
           {testPins && (
             <g>
@@ -200,8 +176,7 @@ export default function FloorPlanViewer({
               </g>
             );
           })()}
-        </svg>
-      </div>
+      </FloorPlanCanvas>
     </div>
   );
 }
