@@ -48,7 +48,7 @@ export default function TabletRoomSelector() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F3EC] flex items-center justify-center">
+      <div className="full-viewport bg-[#F7F3EC] flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 text-gray-500 animate-spin mx-auto mb-4" />
           <div className="text-gray-700 text-xl font-medium">Loading rooms…</div>
@@ -58,7 +58,7 @@ export default function TabletRoomSelector() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F3EC]">
+    <div className="full-viewport bg-[#F7F3EC]">
       {/* Header */}
       <div className="max-w-5xl mx-auto px-6 pt-12 pb-10">
         <div className="flex items-center justify-between gap-4">

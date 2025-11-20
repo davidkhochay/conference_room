@@ -826,7 +826,7 @@ export default function TabletDisplay() {
   );
 
   return (
-    <div className={`h-screen overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`}>
+    <div className={`full-viewport overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn`}>
       <div className="relative z-10 h-full flex flex-col">
         {/* Header */}
         <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">

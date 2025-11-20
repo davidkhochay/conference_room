@@ -3,7 +3,7 @@ import { Calendar, DoorOpen, Monitor, Shield, Map } from 'lucide-react';
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[#F7F3EC]">
+    <div className="full-viewport bg-[#F7F3EC]">
       <div className="max-w-6xl mx-auto px-6 py-16">
         {/* Header */}
         <header className="text-center mb-20">
