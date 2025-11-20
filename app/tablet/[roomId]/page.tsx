@@ -302,14 +302,23 @@ export default function TabletDisplay() {
     setBookingInProgress(true);
     try {
       const now = new Date();
-      // Never overlap existing bookings: clamp duration to the gap before the next booking
+      const targetRoomId = selectedRoomId || roomId;
+
+      // Never overlap existing bookings on the *current* room: clamp duration
+      // to the gap before the next booking, but only when we're booking this
+      // tablet's room. For other rooms (selected from the floor map), we let
+      // the backend + Google Calendar enforce conflicts.
       let effectiveDuration = selectedDuration;
-      if (nextBooking) {
+      if (!selectedRoomId && nextBooking) {
         const nextStart = new Date(nextBooking.start_time);
-        const diffMinutes = Math.floor((nextStart.getTime() - now.getTime()) / (1000 * 60));
+        const diffMinutes = Math.floor(
+          (nextStart.getTime() - now.getTime()) / (1000 * 60)
+        );
 
         if (diffMinutes <= 0) {
-          alert('This room is booked very soon. Quick booking is not available right now.');
+          alert(
+            'This room is booked very soon. Quick booking is not available right now.'
+          );
           setBookingInProgress(false);
           return;
         }
@@ -319,7 +328,6 @@ export default function TabletDisplay() {
         }
       }
 
-      const targetRoomId = selectedRoomId || roomId;
       const endTime = new Date(now.getTime() + effectiveDuration * 60 * 1000);
 
       const host = users.find((u) => u.id === bookingForm.hostId);
@@ -1069,9 +1077,26 @@ export default function TabletDisplay() {
         {/* Booking Form Modal */}
         {showBookingForm && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
-              <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
               <div className="text-center text-3xl font-bold text-gray-900 mb-2">
                 Book {selectedRoomName || status.room_name} for {selectedDuration} minutes
+              </div>
+              {/* Allow users to adjust duration inside the modal as well */}
+              <div className="flex justify-center gap-3 mb-4">
+                {[15, 30, 45, 60].map((minutes) => (
+                  <button
+                    key={minutes}
+                    type="button"
+                    onClick={() => setSelectedDuration(minutes)}
+                    className={`px-4 py-2 rounded-full text-sm font-semibold border ${
+                      selectedDuration === minutes
+                        ? 'bg-gray-900 text-white border-gray-900'
+                        : 'bg-gray-100 text-gray-800 border-gray-300'
+                    }`}
+                  >
+                    {minutes} min
+                  </button>
+                ))}
               </div>
               <div className="text-center text-lg text-gray-600 mb-8">
                 Starting now
