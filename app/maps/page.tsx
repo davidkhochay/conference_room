@@ -183,6 +183,7 @@ export default function MapsPage() {
                 floor={selectedFloor}
                 rooms={floorRooms}
                 roomStatuses={roomStatuses}
+                showTestPins={false}
               />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-gray-400 p-12 text-center">

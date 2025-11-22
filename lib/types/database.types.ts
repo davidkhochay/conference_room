@@ -26,13 +26,34 @@ export type DomainIntegration = {
 
 export type User = {
   id: string;
-  google_user_id: string;
-  primary_email: string;
+  /**
+   * Google Directory user ID. Nullable so we can support manually created
+   * internal users and keep existing rows even if the Google user is removed.
+   */
+  google_user_id: string | null;
+  /**
+   * Primary email address for the user. This is the unique key we use for
+   * sync/upsert from Google Directory.
+   */
+  email: string;
   name: string;
-  company_id: string;
-  is_admin: boolean;
+  /**
+   * Company the user belongs to. Nullable to support users that are not yet
+   * mapped or are shared across companies.
+   */
+  company_id: string | null;
+  /**
+   * Role in the app – kept separate from Google admin roles.
+   */
+  role: 'user' | 'admin';
   is_location_manager: boolean;
   photo_url: string | null;
+  /**
+   * active   – normal user; can be picked in UI and used as host.
+   * inactive – only visible in admin; treated as if they don't exist in
+   *            booking/search flows.
+   * deleted  – reserved for hard removals / historical records.
+   */
   status: 'active' | 'inactive' | 'deleted';
   created_at: string;
   updated_at: string;
@@ -117,6 +138,13 @@ export type Booking = {
   check_in_time: string | null;
   extended_count: number;
   attendee_emails: string[];
+  /**
+   * Optional metadata for events that originated outside this app, e.g.
+   * meetings created directly in the Google Calendar UI.
+   */
+  external_source?: string | null;
+  organizer_email?: string | null;
+  last_synced_at?: string | null;
   created_at: string;
   updated_at: string;
 };

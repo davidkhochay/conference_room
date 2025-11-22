@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Building2, MapPin, DoorOpen, Users, Calendar, Clock } from 'lucide-react';
+import { bucketBookings, normalizeBookingStatus } from '@/lib/utils/bookingStatus';
 
 interface Booking {
   id: string;
@@ -156,68 +157,36 @@ export default function AdminDashboard() {
   ];
 
   const getStatusStyles = (booking: Booking) => {
-    const normalized = booking.status.toLowerCase();
+    const normalized = normalizeBookingStatus(booking);
 
-    // Hard cancel states
-    if (normalized === 'no_show') {
-      return {
-        label: 'no show',
-        classes: 'bg-amber-50 text-amber-700 border border-amber-200',
-      };
+    switch (normalized) {
+      case 'no_show':
+        return {
+          label: 'no show',
+          classes: 'bg-amber-50 text-amber-700 border border-amber-200',
+        };
+      case 'cancelled':
+        return {
+          label: 'cancelled',
+          classes: 'bg-rose-50 text-rose-700 border border-rose-200',
+        };
+      case 'completed':
+        return {
+          label: 'completed',
+          classes: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+        };
+      case 'in_use':
+        return {
+          label: 'in use',
+          classes: 'bg-rose-50 text-rose-700 border border-rose-200',
+        };
+      case 'upcoming':
+      default:
+        return {
+          label: 'upcoming',
+          classes: 'bg-amber-50 text-amber-700 border border-amber-200',
+        };
     }
-
-    if (normalized === 'cancelled') {
-      return {
-        label: 'cancelled',
-        classes: 'bg-rose-50 text-rose-700 border border-rose-200',
-      };
-    }
-
-    const start = new Date(booking.start_time);
-    const end = new Date(booking.end_time);
-    const now = new Date();
-
-    if (end < now || normalized === 'ended' || normalized === 'completed') {
-      return {
-        label: 'completed',
-        classes: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
-      };
-    }
-
-    if (start <= now && now < end || normalized === 'in_progress') {
-      return {
-        label: 'in use',
-        classes: 'bg-rose-50 text-rose-700 border border-rose-200',
-      };
-    }
-
-    // Default: upcoming
-    return {
-      label: 'upcoming',
-      classes: 'bg-amber-50 text-amber-700 border border-amber-200',
-    };
-  };
-
-  const getStatusBucket = (booking: Booking): 'in_use' | 'upcoming' | 'completed_cancelled' => {
-    const normalized = booking.status.toLowerCase();
-
-    if (normalized === 'no_show' || normalized === 'cancelled') {
-      return 'completed_cancelled';
-    }
-
-    const start = new Date(booking.start_time);
-    const end = new Date(booking.end_time);
-    const now = new Date();
-
-    if (end < now || normalized === 'ended' || normalized === 'completed') {
-      return 'completed_cancelled';
-    }
-
-    if (start <= now && now < end || normalized === 'in_progress') {
-      return 'in_use';
-    }
-
-    return 'upcoming';
   };
 
   const renderBookingRow = (booking: Booking) => {
@@ -303,16 +272,8 @@ export default function AdminDashboard() {
         ) : recentBookings.length === 0 ? (
           <div className="text-gray-600 py-4">No bookings yet</div>
         ) : (() => {
-          const inUse: Booking[] = [];
-          const upcoming: Booking[] = [];
-          const completedCancelled: Booking[] = [];
-
-          recentBookings.forEach((booking) => {
-            const bucket = getStatusBucket(booking);
-            if (bucket === 'in_use') inUse.push(booking);
-            else if (bucket === 'upcoming') upcoming.push(booking);
-            else completedCancelled.push(booking);
-          });
+          const { in_use: inUse, upcoming, completed_cancelled: completedCancelled } =
+            bucketBookings(recentBookings);
 
           return (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

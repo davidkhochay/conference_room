@@ -91,6 +91,10 @@ CREATE TABLE bookings (
   check_in_time TIMESTAMPTZ,
   extended_count INTEGER NOT NULL DEFAULT 0,
   attendee_emails TEXT[] DEFAULT '{}',
+  -- Optional metadata to support two-way Google Calendar sync
+  external_source TEXT, -- e.g. 'google_ui' for events that originated in Google
+  organizer_email TEXT,
+  last_synced_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT valid_time_range CHECK (end_time > start_time)
@@ -200,5 +204,6 @@ INSERT INTO settings (key, value, scope, description) VALUES
   ('booking_hours_start', '7', 'global', 'Start of allowed booking hours (24h format)'),
   ('booking_hours_end', '19', 'global', 'End of allowed booking hours (24h format)'),
   ('auto_release_minutes', '15', 'global', 'Minutes to wait before auto-releasing a booking without check-in'),
-  ('quick_booking_durations', '[15, 30, 45, 60]', 'global', 'Quick booking duration options in minutes');
+  ('quick_booking_durations', '[15, 30, 45, 60]', 'global', 'Quick booking duration options in minutes'),
+  ('no_show_grace_minutes', '10', 'global', 'Minutes after start before un-checked-in bookings are marked as no_show');
 

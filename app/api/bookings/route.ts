@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBookingService } from '@/lib/services/booking.service';
+import { syncRoomFromGoogle } from '@/lib/services/google-sync.service';
 import { CreateBookingSchema } from '@/lib/types/api.types';
 
 export async function POST(request: NextRequest) {
@@ -30,6 +31,22 @@ export async function GET(request: NextRequest) {
     const { getServerAdminClient } = await import('@/lib/supabase/server');
     const supabase = getServerAdminClient();
 
+    if (roomId) {
+      // Refresh this room's bookings from Google so calendars and tablets show
+      // up-to-date events including meetings created directly in Google.
+      try {
+        await syncRoomFromGoogle(roomId);
+      } catch (e: any) {
+        console.error('Failed to sync room from Google (non-fatal)', {
+          roomId,
+          message: e?.message,
+          code: e?.code,
+          status: e?.status,
+          details: e,
+        });
+      }
+    }
+
     let query = supabase
       .from('bookings')
       .select('*, room:rooms(*, location:locations(*)), host:users(*)')
@@ -43,12 +60,21 @@ export async function GET(request: NextRequest) {
       query = query.eq('host_user_id', userId);
     }
 
-    if (startDate) {
-      query = query.gte('start_time', startDate);
-    }
-
-    if (endDate) {
-      query = query.lte('end_time', endDate);
+    // Time filtering semantics:
+    // - If both start_date and end_date are provided, return bookings whose
+    //   time range OVERLAPS the given window:
+    //     booking.end_time   >= start_date
+    //     AND booking.start_time <= end_date
+    // - If only start_date is provided, return bookings that end at or after it.
+    // - If only end_date is provided, return bookings that start at or before it.
+    if (startDate && endDate) {
+      query = query
+        .gte('end_time', startDate)
+        .lte('start_time', endDate);
+    } else if (startDate) {
+      query = query.gte('end_time', startDate);
+    } else if (endDate) {
+      query = query.lte('start_time', endDate);
     }
 
     const { data, error } = await query.limit(100);

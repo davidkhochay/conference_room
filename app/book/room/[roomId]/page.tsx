@@ -242,7 +242,84 @@ interface TimePickerFieldProps {
   onChange: (value: string) => void;
 }
 
+// Parse flexible time input (e.g. "10:30", "10:30am", "3 pm") into "HH:mm"
+function parseTimeInput(input: string): string | null {
+  const raw = input.trim().toLowerCase();
+  if (!raw) return null;
+
+  const ampmMatch = raw.match(/\b(am|pm)\b/);
+  const isPM = ampmMatch?.[1] === 'pm';
+
+  // Keep only digits and colon for the numeric portion
+  const numeric = raw.replace(/[^0-9:]/g, '');
+  if (!numeric) return null;
+
+  const [hStr, mStr = '0'] = numeric.split(':');
+  const hours = parseInt(hStr, 10);
+  const minutes = parseInt(mStr, 10);
+
+  if (
+    Number.isNaN(hours) ||
+    Number.isNaN(minutes) ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  let h = hours;
+  if (ampmMatch) {
+    if (h === 12) {
+      h = isPM ? 12 : 0;
+    } else if (isPM) {
+      h += 12;
+    }
+  }
+
+  if (h < 0 || h > 23) return null;
+
+  const hh = String(h).padStart(2, '0');
+  const mm = String(minutes).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// Format "HH:mm" into a friendly 12‑hour display, e.g. "10:30 AM"
+function formatTimeDisplay(value: string): string {
+  if (!value) return '';
+  const [hStr, mStr = '00'] = value.split(':');
+  const h24 = parseInt(hStr, 10);
+  if (Number.isNaN(h24)) return '';
+  const suffix = h24 >= 12 ? 'PM' : 'AM';
+  let h12 = h24 % 12;
+  if (h12 === 0) h12 = 12;
+  return `${h12}:${mStr.padStart(2, '0')} ${suffix}`;
+}
+
 function TimePickerField({ label, value, onChange }: TimePickerFieldProps) {
+  const [text, setText] = useState<string>(() => formatTimeDisplay(value));
+
+  // Keep local text in sync if the canonical value changes externally
+  useEffect(() => {
+    setText(formatTimeDisplay(value));
+  }, [value]);
+
+  const commit = () => {
+    if (!text.trim()) {
+      onChange('');
+      return;
+    }
+    const parsed = parseTimeInput(text);
+    if (!parsed) {
+      // Revert to last valid value
+      setText(formatTimeDisplay(value));
+      return;
+    }
+    if (parsed !== value) {
+      onChange(parsed);
+    }
+    setText(formatTimeDisplay(parsed));
+  };
+
   return (
     <div className="w-full">
       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -251,9 +328,16 @@ function TimePickerField({ label, value, onChange }: TimePickerFieldProps) {
       <div className="relative">
         <Clock className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
-          type="time"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.currentTarget.blur();
+            }
+          }}
+          placeholder="e.g. 10:30 AM"
           className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder:text-gray-400 bg-white"
         />
       </div>
@@ -453,9 +537,21 @@ export default function RoomBookingPage() {
       const result = await response.json();
       
       if (result.success) {
-        const existingBookings = result.data.filter(
-          (b: any) => b.status === 'scheduled' || b.status === 'confirmed'
-        );
+        const existingBookings = result.data.filter((b: any) => {
+          const status = (b.status || '').toLowerCase();
+
+          // No-shows and cancelled bookings should not block new bookings
+          if (status === 'no_show' || status === 'cancelled') {
+            return false;
+          }
+
+          // Treat scheduled / confirmed / in_progress as blocking
+          return (
+            status === 'scheduled' ||
+            status === 'confirmed' ||
+            status === 'in_progress'
+          );
+        });
 
         // Check for conflicts
         const hasConflict = existingBookings.some((b: any) => {
@@ -613,7 +709,7 @@ export default function RoomBookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F3EC]">
+    <div className="min-h-screen bg-[#F7F3EC] overflow-y-auto">
       {/* Header */}
       <div className="max-w-5xl mx-auto px-6 pt-10 pb-4">
         <div className="flex items-center justify-between gap-4">

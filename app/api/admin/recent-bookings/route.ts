@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAdminClient } from '@/lib/supabase/server';
+import { getBookingService } from '@/lib/services/booking.service';
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = getServerAdminClient();
+
+    // Keep recent bookings in sync with tablet / room status by marking any
+    // stale, never-checked-in bookings as no-shows before we query.
+    const bookingService = getBookingService();
+    await bookingService.markNoShows();
 
     // Focus on bookings around "now" so the dashboard reflects real usage
     const now = new Date();

@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
 import { Input } from '@/lib/components/ui/Input';
-import { Pencil, Trash2, Plus, Search, Mail, Building2 } from 'lucide-react';
+import { Pencil, Plus, Search, Mail, Building2 } from 'lucide-react';
 import Link from 'next/link';
 
 interface User {
@@ -17,20 +17,27 @@ interface User {
     name: string;
   };
   created_at: string;
+  status?: 'active' | 'inactive' | 'deleted';
 }
 
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    fetchUsers(statusFilter);
+  }, [statusFilter]);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (status: 'active' | 'inactive' | 'all' = 'active') => {
     try {
-      const response = await fetch('/api/admin/users');
+      const params = new URLSearchParams();
+      if (status !== 'all') {
+        params.set('status', status);
+      }
+      const response = await fetch(`/api/admin/users?${params.toString()}`);
       const result = await response.json();
       
       if (result.success) {
@@ -43,22 +50,26 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleDelete = async (userId: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return;
-
+  const handleSyncFromGoogle = async () => {
+    if (syncing) return;
+    setSyncing(true);
     try {
-      const response = await fetch(`/api/admin/users/${userId}`, {
-        method: 'DELETE',
+      const response = await fetch('/api/admin/users/sync', {
+        method: 'POST',
       });
-
-      if (response.ok) {
-        setUsers(users.filter(user => user.id !== userId));
-      } else {
-        alert('Failed to delete user');
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        alert(result.error?.message || 'Failed to sync users from Google');
+        return;
       }
+      // Refresh current view after sync completes
+      await fetchUsers(statusFilter);
+      alert('User directory synced from Google.');
     } catch (error) {
-      console.error('Failed to delete user:', error);
-      alert('Failed to delete user');
+      console.error('Failed to sync users from Google:', error);
+      alert('Failed to sync users from Google');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -97,12 +108,57 @@ export default function AdminUsersPage() {
               />
             </div>
           </div>
-          <Link href="/admin/users/new">
-            <Button>
-              <Plus className="w-4 h-4 mr-2 inline" />
-              Add User
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2 ml-4">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('active')}
+              className={`px-3 py-2 rounded-full text-xs font-semibold ${
+                statusFilter === 'active'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Active
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('inactive')}
+              className={`px-3 py-2 rounded-full text-xs font-semibold ${
+                statusFilter === 'inactive'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Inactive
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-2 rounded-full text-xs font-semibold ${
+                statusFilter === 'all'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              All
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSyncFromGoogle}
+              className="px-4 py-2 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 bg-white hover:bg-gray-50"
+              disabled={syncing}
+            >
+              {syncing ? 'Syncing…' : 'Sync from Google'}
+            </button>
+            <Link href="/admin/users/new">
+              <Button>
+                <Plus className="w-4 h-4 mr-2 inline" />
+                Add User
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {loading ? (
@@ -142,6 +198,9 @@ export default function AdminUsersPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Role
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
@@ -178,21 +237,25 @@ export default function AdminUsersPage() {
                         {user.role}
                       </span>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                          user.status === 'inactive'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : user.status === 'deleted'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}
+                      >
+                        {user.status || 'active'}
+                      </span>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <div className="flex justify-end gap-2">
-                        <Link href={`/admin/users/${user.id}`}>
-                          <Button variant="secondary" size="sm">
-                            <Pencil className="w-3 h-3" />
-                          </Button>
-                        </Link>
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleDelete(user.id)}
-                        >
-                          <Trash2 className="w-3 h-3" />
+                      <Link href={`/admin/users/${user.id}`}>
+                        <Button variant="secondary" size="sm">
+                          <Pencil className="w-3 h-3" />
                         </Button>
-                      </div>
+                      </Link>
                     </td>
                   </tr>
                 ))}

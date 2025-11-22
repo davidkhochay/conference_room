@@ -21,6 +21,7 @@ interface User {
   role: string;
   company_id: string | null;
   photo_url: string | null;
+   status?: 'active' | 'inactive' | 'deleted';
 }
 
 export default function EditUserPage() {
@@ -40,6 +41,8 @@ export default function EditUserPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -109,6 +112,61 @@ export default function EditUserPage() {
     }
   };
 
+  const handleToggleStatus = async () => {
+    if (!user) return;
+    const targetStatus = user.status === 'inactive' ? 'active' : 'inactive';
+    const actionLabel = targetStatus === 'inactive' ? 'deactivate' : 'reactivate';
+
+    if (!confirm(`Are you sure you want to ${actionLabel} this user?`)) return;
+
+    setStatusUpdating(true);
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: targetStatus }),
+      });
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        alert(result.error?.message || `Failed to ${actionLabel} user`);
+        return;
+      }
+
+      const updated = result.data;
+      setUser((prev) => (prev ? { ...prev, status: updated.status } : prev));
+    } catch (err) {
+      console.error(`Failed to ${actionLabel} user`, err);
+      alert(`Failed to ${actionLabel} user`);
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!user) return;
+    if (!confirm('Are you sure you want to permanently delete this user?')) return;
+
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        alert('Failed to delete user');
+        return;
+      }
+
+      router.push('/admin/users');
+    } catch (err) {
+      console.error('Failed to delete user', err);
+      alert('Failed to delete user');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -171,14 +229,51 @@ export default function EditUserPage() {
                   <Mail className="w-4 h-4 mr-2" />
                   <span className="text-sm">{user.email}</span>
                 </div>
-                <div className="mt-4">
-                  <span className={`px-3 py-1 text-sm font-semibold rounded-full ${
-                    user.role === 'admin' 
-                      ? 'bg-purple-100 text-purple-800' 
-                      : 'bg-gray-100 text-gray-800'
-                  }`}>
+                <div className="mt-4 flex flex-col items-center gap-2">
+                  <span
+                    className={`px-3 py-1 text-sm font-semibold rounded-full ${
+                      user.role === 'admin'
+                        ? 'bg-purple-100 text-purple-800'
+                        : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {user.role}
                   </span>
+                  <span
+                    className={`px-3 py-1 text-xs font-semibold rounded-full ${
+                      user.status === 'inactive'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : user.status === 'deleted'
+                        ? 'bg-red-100 text-red-800'
+                        : 'bg-green-100 text-green-800'
+                    }`}
+                  >
+                    {user.status || 'active'}
+                  </span>
+                </div>
+                <div className="mt-6 flex flex-col gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    onClick={handleToggleStatus}
+                    disabled={statusUpdating}
+                  >
+                    {statusUpdating
+                      ? 'Updating status...'
+                      : user.status === 'inactive'
+                      ? 'Activate user'
+                      : 'Deactivate user'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    className="w-full"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? 'Deleting...' : 'Delete user'}
+                  </Button>
                 </div>
               </div>
             </Card>

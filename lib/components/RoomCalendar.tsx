@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import {
   format,
   isSameDay,
@@ -9,8 +9,9 @@ import {
   isToday,
   startOfMonth,
   endOfMonth,
-} from 'date-fns';
-import { ChevronLeft, ChevronRight, Clock, User, Trash2, Calendar } from 'lucide-react';
+} from "date-fns";
+import { ChevronLeft, ChevronRight, Clock, User, Trash2, Calendar } from "lucide-react";
+import { normalizeBookingStatus } from "@/lib/utils/bookingStatus";
 
 interface Booking {
   id: string;
@@ -18,6 +19,9 @@ interface Booking {
   start_time: string;
   end_time: string;
   status: string;
+  google_event_id?: string | null;
+  google_calendar_id?: string | null;
+  external_source?: string | null;
   host?: {
     name: string;
   };
@@ -219,43 +223,50 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
         <div className="text-center py-8 text-xs text-gray-500">
           No bookings for this date.
         </div>
-      ) : (
+        ) : (
         <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
           {selectedDateBookings.map((booking) => {
             const start = new Date(booking.start_time);
             const end = new Date(booking.end_time);
             const now = new Date();
+            const normalized = normalizeBookingStatus(booking, now);
 
             let statusLabel:
-              | 'in use'
-              | 'upcoming'
-              | 'completed'
-              | 'cancelled'
-              | 'auto-cancelled' = 'upcoming';
+              | "in use"
+              | "upcoming"
+              | "completed"
+              | "cancelled"
+              | "no show" = "upcoming";
             let chipClasses =
-              'bg-blue-100 text-blue-800 border border-blue-200';
+              "bg-blue-100 text-blue-800 border border-blue-200";
 
-            if (booking.status === 'no_show') {
-              statusLabel = 'auto-cancelled';
+            if (normalized === "no_show") {
+              statusLabel = "no show";
               chipClasses =
-                'bg-red-50 text-red-700 border border-red-200';
-            } else if (booking.status === 'cancelled') {
-              statusLabel = 'cancelled';
+                "bg-amber-50 text-amber-700 border border-amber-200";
+            } else if (normalized === "cancelled") {
+              statusLabel = "cancelled";
               chipClasses =
-                'bg-gray-100 text-gray-600 border border-gray-200';
-            } else if (end < now) {
-              statusLabel = 'completed';
+                "bg-gray-100 text-gray-600 border border-gray-200";
+            } else if (normalized === "completed") {
+              statusLabel = "completed";
               chipClasses =
-                'bg-gray-100 text-gray-600 border border-gray-200';
-            } else if (start <= now && now < end) {
-              statusLabel = 'in use';
+                "bg-gray-100 text-gray-600 border border-gray-200";
+            } else if (normalized === "in_use") {
+              statusLabel = "in use";
               chipClasses =
-                'bg-green-100 text-green-800 border border-green-200';
+                "bg-green-100 text-green-800 border border-green-200";
             } else {
-              statusLabel = 'upcoming';
+              statusLabel = "upcoming";
               chipClasses =
-                'bg-blue-100 text-blue-800 border border-blue-200';
+                "bg-blue-100 text-blue-800 border border-blue-200";
             }
+
+            const isGoogleImported = booking.external_source === 'google_ui';
+            const canCancelInApp =
+              !isGoogleImported &&
+              (booking.status === 'scheduled' ||
+                (booking.status as string) === 'confirmed');
 
               return (
               <div
@@ -271,7 +282,12 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
                   </div>
                   <div className="text-xs font-semibold text-gray-900">
                     {booking.title}
-                        </div>
+                  </div>
+                  {isGoogleImported && (
+                    <div className="mt-0.5 text-[10px] uppercase tracking-wide text-blue-600">
+                      From Google Calendar
+                    </div>
+                  )}
                   {booking.host && (
                     <div className="mt-0.5 flex items-center text-[11px] text-gray-600">
                       <User className="w-3 h-3 mr-1" />
@@ -285,8 +301,7 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
                         >
                     {statusLabel}
                         </span>
-                  {(booking.status === 'scheduled' ||
-                    booking.status === 'confirmed') && (
+                  {canCancelInApp && (
                           <button
                             onClick={() => handleDeleteBooking(booking.id)}
                             disabled={deleting === booking.id}

@@ -17,7 +17,7 @@ export default function Home() {
 
         {/* Main Actions */}
         <main className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <Link href="/book/public">
+          <Link href="/book">
             <div className="cursor-pointer rounded-3xl bg-white px-8 py-10 tablet-shadow hover:translate-y-0.5 transition-transform h-full">
               <div className="flex flex-col gap-4">
                 <div className="w-12 h-12 rounded-full bg-[#E3F2FF] flex items-center justify-center">

@@ -167,7 +167,18 @@ export default function TabletDisplay() {
   }>>([]);
   const [justReleased, setJustReleased] = useState(false);
   const [pendingRelease, setPendingRelease] = useState(false);
-  const device = (searchParams.get('device') as 'computer' | 'ipad' | 'amazon') || 'ipad';
+  const deviceParam = (searchParams.get('device') as string | null) || 'ipad';
+  // Support legacy ?device=amazon by mapping it to the 10\" tablet preset
+  const device = ((): 'computer' | 'ipad' | 'tablet10' | 'tablet8' => {
+    if (deviceParam === 'computer' || deviceParam === 'ipad') return deviceParam;
+    if (deviceParam === 'tablet10' || deviceParam === 'amazon') return 'tablet10';
+    if (deviceParam === 'tablet8') return 'tablet8';
+    return 'ipad';
+  })();
+  const isComputer = device === 'computer';
+  const isTablet10 = device === 'tablet10';
+  const isTablet8 = device === 'tablet8';
+  const isAmazon = isTablet10 || isTablet8;
   const [bookingTarget, setBookingTarget] = useState<{
     roomId: string;
     roomName: string;
@@ -351,7 +362,11 @@ export default function TabletDisplay() {
       if (!result.success) return;
 
       const roomStatus: RoomStatus = result.data;
-      const availableMinutes = computeAvailableMinutes(roomStatus);
+      const rawAvailableMinutes = computeAvailableMinutes(roomStatus);
+      // If we ever compute a non-positive window here, treat it as \"no cap\"
+      // so the booking service / Google Calendar remains the source of truth.
+      const availableMinutes =
+        rawAvailableMinutes && rawAvailableMinutes > 0 ? rawAvailableMinutes : null;
       const allowedDurations = [15, 30, 45, 60].filter(
         (m) => availableMinutes === null || m <= availableMinutes
       );
@@ -364,6 +379,12 @@ export default function TabletDisplay() {
 
       setSelectedDuration(allowedDurations[0] ?? null);
       setShowBookingForm(true);
+
+      // On tablet layouts, close the map and reuse the full-screen tablet
+      // booking modal so the entire form is visible (same as \"Book Now\").
+      if (device === 'tablet10' || device === 'tablet8') {
+        setShowMap(false);
+      }
     } catch (err) {
       console.error('Failed to open booking from floor map', err);
     }
@@ -448,6 +469,20 @@ export default function TabletDisplay() {
 
       const result = await response.json();
       if (result.success) {
+        const bookingId: string | undefined = result.data?.id;
+
+        // For bookings created on THIS room's tablet, auto check-in so the room
+        // immediately goes to \"in use\" (red) with no extra tap needed.
+        if ((!bookingTarget || bookingTarget.roomId === roomId) && bookingId) {
+          try {
+            await fetch(`/api/bookings/${bookingId}/checkin`, {
+              method: 'POST',
+            });
+          } catch (err) {
+            console.error('Failed to auto check-in booking from tablet:', err);
+          }
+        }
+
         // Only refresh this tablet's status if we booked for the same room
         if (!bookingTarget || bookingTarget.roomId === roomId) {
           await fetchStatus();
@@ -740,6 +775,14 @@ export default function TabletDisplay() {
       : dayBookings;
   const hasBookingsForDay = filteredDayBookings.length > 0;
 
+  // 8" tablet: detect when we're looking at today's bookings so we can
+  // move them into a right-hand sidebar instead of only showing them
+  // in the bottom bar.
+  const isTodaySelected = isToday(selectedDate);
+  const todayBookingsForSidebar = isTodaySelected ? filteredDayBookings : [];
+  const showSidebarBookings =
+    isTablet8 && todayBookingsForSidebar.length > 0;
+
   const handleConfirmPin = async () => {
     try {
       const pin = settingsPin.trim();
@@ -869,9 +912,21 @@ export default function TabletDisplay() {
         );
 
         if (minutesAvailable > 0) {
-      return {
-        title: `Available for ${minutesAvailable} min`,
-        subtitle: null,
+          const hours = Math.floor(minutesAvailable / 60);
+          const mins = minutesAvailable % 60;
+
+          let readable: string;
+          if (hours > 0 && mins > 0) {
+            readable = `${hours} hr${hours > 1 ? 's' : ''} ${mins} min`;
+          } else if (hours > 0) {
+            readable = `${hours} hr${hours > 1 ? 's' : ''}`;
+          } else {
+            readable = `${minutesAvailable} min`;
+          }
+
+          return {
+            title: `Available for ${readable}`,
+            subtitle: null,
             host: null,
           };
         }
@@ -893,6 +948,10 @@ export default function TabletDisplay() {
   };
 
   const statusInfo = getStatusText();
+  const availablePrefix = 'Available for ';
+  const availableDuration = statusInfo.title.startsWith(availablePrefix)
+    ? statusInfo.title.slice(availablePrefix.length)
+    : null;
 
   const computeAvailableMinutes = (roomStatus: RoomStatus | null): number | null => {
     if (!roomStatus) return null;
@@ -928,9 +987,33 @@ export default function TabletDisplay() {
     bookingTarget?.availableMinutes ?? currentRoomAvailableMinutes;
   const durationOptions = [15, 30, 45, 60];
 
-  const isComputer = device === 'computer';
-  const isAmazon = device === 'amazon';
-  const bookingsOffsetClass = isAmazon ? 'mt-4' : isComputer ? 'mt-28' : 'mt-20';
+  const bookingsOffsetClass = isTablet8
+    ? 'mt-0'
+    : isTablet10
+    ? 'mt-4'
+    : isComputer
+    ? 'mt-28'
+    : 'mt-20';
+
+  // Layout helpers so we can treat Amazon-style tablets a bit differently
+  const bookingOverlayContainerClass = isAmazon
+    ? 'fixed inset-0 bg-black/50 backdrop-blur-sm z-50 overflow-y-auto flex items-center justify-center p-8'
+    : 'fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8';
+
+  const bookingOverlayCardClass = isAmazon
+    ? 'bg-white rounded-3xl p-6 shadow-2xl max-w-2xl w-[94%] mx-auto my-10'
+    : 'bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto';
+
+  const mapBookingOverlayContainerClass = isAmazon
+    ? 'absolute inset-0 flex items-center justify-center pointer-events-none px-6 pb-10'
+    : 'absolute inset-x-0 bottom-0 pb-10 flex justify-center pointer-events-none';
+
+  const mapBookingOverlayCardWrapperClass =
+    'pointer-events-auto w-full max-w-2xl px-0 md:px-6';
+
+  const mapBookingOverlayCardClass = isAmazon
+    ? 'bg-white rounded-3xl p-8 shadow-2xl w-[94%] mx-auto my-10 max-h-[90vh] overflow-y-auto'
+    : 'bg-white rounded-3xl p-8 shadow-2xl h-[70vh] overflow-y-auto';
 
   const releaseMinutesToEnd = status?.current_booking
     ? Math.round(
@@ -943,13 +1026,24 @@ export default function TabletDisplay() {
   const requiresReleaseConfirm =
     releaseMinutesToEnd !== null && Math.abs(releaseMinutesToEnd) > 15;
 
-  const renderFeatureBadges = (extraClasses = '') => (
-    <div className={`flex gap-4 ${extraClasses} tablet-btn`}>
-      {status.features?.tv && (
-        <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
+  const renderFeatureBadges = (extraClasses = '') => {
+    const compact = isTablet8;
+    const containerClasses = `flex flex-nowrap items-center ${
+      compact ? 'gap-2' : 'gap-4'
+    } ${extraClasses} tablet-btn`;
+    const badgeBaseClasses = `${
+      compact ? 'px-3 py-2' : 'px-6 py-3'
+    } border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black whitespace-nowrap`;
+    const iconClasses = compact ? 'w-4 h-4' : 'w-5 h-5';
+    const labelClasses = compact ? 'text-base font-medium' : 'text-lg font-medium';
+
+    return (
+      <div className={containerClasses}>
+        {status.features?.tv && (
+          <div className={badgeBaseClasses}>
           {/* Screen Mirroring / AirPlay-style icon */}
           <svg
-            className="w-5 h-5"
+              className={iconClasses}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -960,20 +1054,20 @@ export default function TabletDisplay() {
             <rect x="3" y="5" width="18" height="12" rx="2" />
             <path d="M9 19h6l-3-4z" />
           </svg>
-          <span className="text-lg font-medium">Screen Mirroring</span>
+            <span className={labelClasses}>Screen Mirroring</span>
+          </div>
+        )}
+
+        <div className={badgeBaseClasses}>
+          <Users className={iconClasses} />
+          <span className={labelClasses}>{status.capacity} max</span>
         </div>
-      )}
 
-      <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
-        <Users className="w-5 h-5" />
-        <span className="text-lg font-medium">{status.capacity} max</span>
-      </div>
-
-      {status.features?.whiteboard && (
-        <div className="px-6 py-3 border-2 border-black/40 rounded-full flex items-center gap-2 bg-transparent text-black">
+        {status.features?.whiteboard && (
+          <div className={badgeBaseClasses}>
           {/* Whiteboard icon */}
           <svg
-            className="w-5 h-5"
+              className={iconClasses}
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
@@ -984,11 +1078,12 @@ export default function TabletDisplay() {
             <rect x="3" y="4" width="18" height="12" rx="2" />
             <path d="M7 14l3.5-3 2 2L17 9" />
           </svg>
-          <span className="text-lg font-medium">Whiteboard</span>
-        </div>
-      )}
-    </div>
-  );
+            <span className={labelClasses}>Whiteboard</span>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Root + shell layout classes so we can target Amazon tablet specifically
   const rootClassName = `fixed inset-0 overflow-hidden ${getBackgroundColor()} transition-colors duration-500 tablet-btn ${
@@ -996,7 +1091,11 @@ export default function TabletDisplay() {
   }`;
 
   const shellClassName = `relative z-10 flex flex-col ${
-    isAmazon ? 'w-[1920px] h-[1200px] max-w-full max-h-full aspect-[16/10]' : 'h-full'
+    isTablet10
+      ? 'w-[1920px] h-[1200px] max-w-full max-h-full aspect-[16/10]'
+      : isTablet8
+      ? 'w-[1280px] h-[800px] max-w-full max-h-full aspect-[5/3]'
+      : 'h-full'
   }`;
 
   return (
@@ -1027,103 +1126,354 @@ export default function TabletDisplay() {
         </div>
 
         {/* Main Content */}
-        <div
-          className={`flex-1 flex flex-col items-center px-12 tablet-btn ${
-            isAmazon ? 'justify-start pt-4' : 'justify-center'
-          }`}
-        >
-          {/* Feature / capacity badges (non-Amazon layouts) */}
-          {!isAmazon && renderFeatureBadges('mb-12')}
+        {isTablet8 && showSidebarBookings ? (
+          // 8" tablet with bookings today: two-column layout
+          <div className="flex-1 flex flex-row items-start px-12 gap-10 tablet-btn">
+            {/* Left: room name, status, actions */}
+            <div className="flex flex-col flex-[3] pt-4">
+              {/* Room Name */}
+              <h1 className="text-8xl font-bold text-gray-900 mb-6 tablet-btn text-left">
+                {status.room_name}
+              </h1>
 
-          {/* Room Name */}
-          <h1
-            className={`${isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'} font-bold text-gray-900 mb-12 text-center tablet-btn`}
-          >
-            {status.room_name}
-          </h1>
+              {/* Status Info */}
+              <div className="mb-8 tablet-btn">
+                {status.is_occupied && statusInfo.subtitle ? (
+                  <div className="text-left">
+                    <h2 className="text-3xl font-semibold text-white">
+                      {statusInfo.subtitle}
+                    </h2>
+                    <h3 className="text-4xl font-semibold text-white mt-1">
+                      {statusInfo.title}
+                    </h3>
+                    {statusInfo.host && (
+                      <p className="text-xl text-white mt-1">
+                        by {statusInfo.host}
+                      </p>
+                    )}
+                  </div>
+                ) : showCheckIn && statusInfo.title ? (
+                  <div className="text-left">
+                    {statusInfo.subtitle && (
+                      <h2 className="text-3xl font-semibold text-black">
+                        {statusInfo.subtitle}
+                      </h2>
+                    )}
+                    <h3 className="text-4xl font-semibold text-black mt-1">
+                      {statusInfo.title}
+                    </h3>
+                    {statusInfo.host && (
+                      <p className="text-xl text-black mt-1">
+                        by {statusInfo.host}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-left">
+                    {availableDuration ? (
+                      <>
+                        <h2 className="text-4xl font-semibold text-white">
+                          Available for
+                        </h2>
+                        <h3 className="text-5xl font-semibold text-white mt-1">
+                          {availableDuration}
+                        </h3>
+                      </>
+                    ) : (
+                      <h2 className="text-4xl font-semibold text-white">
+                        {statusInfo.title}
+                      </h2>
+                    )}
+                  </div>
+                )}
+              </div>
 
-          {/* Status Info */}
-        <div className="text-center mb-16 tablet-btn">
-            {status.is_occupied && statusInfo.subtitle ? (
-              <>
-                <h2
-                  className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold ${getTextColor()} mb-4`}
-                >
-                  {statusInfo.subtitle} - {statusInfo.title}
-                </h2>
-                {statusInfo.host && (
-                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} ${getTextColor()}`}>
-                    by {statusInfo.host}
-                  </p>
-                )}
-              </>
-            ) : showCheckIn && statusInfo.title ? (
-              <>
-                <h2 className={`${isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'} font-semibold text-black mb-4`}>
-                  {statusInfo.subtitle} - {statusInfo.title}
-                </h2>
-                {statusInfo.host && (
-                  <p className={`${isComputer ? 'text-3xl' : 'text-4xl'} text-black`}>
-                    by {statusInfo.host}
-                  </p>
-                )}
-              </>
-            ) : (
-              <h2
-                className={`${isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'} font-semibold text-white`}
+              {/* Action Buttons */}
+              <div
+                className={`flex gap-6 transition-all duration-200 tablet-btn ${
+                  hideActions
+                    ? 'opacity-0 translate-y-3 pointer-events-none'
+                    : 'opacity-100 translate-y-0'
+                }`}
               >
-                {statusInfo.title}
-              </h2>
-            )}
-          </div>
+                {/* Green: quick book */}
+                {isAvailable && !showCheckIn && !showBookingForm && (
+                  <button
+                    onClick={() => handleQuickBookClick(30)}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
+                  >
+                    Book Now
+                  </button>
+                )}
 
-          {/* Action Buttons */}
+                {/* Yellow: check-in for upcoming event */}
+                {showCheckIn && !status.is_occupied && nextBooking && (
+                  <button
+                    onClick={() => handleCheckIn(nextBooking.id)}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
+                  >
+                    Check in
+                  </button>
+                )}
+
+                {/* Red: in meeting – release / extend */}
+                {!isAvailable && !showCheckIn && (
+                  <>
+                    <button
+                      onClick={endMeeting}
+                      className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-white/90 hover:bg-white text-red-600 rounded-full transition-all"
+                    >
+                      {requiresReleaseConfirm && pendingRelease
+                        ? 'Confirm Release'
+                        : 'Release Room'}
+                    </button>
+                    <button
+                      onClick={() => extendMeeting(30)}
+                      className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-red-400/40 hover:bg-red-400/60 text-white rounded-full transition-all backdrop-blur-sm"
+                    >
+                      Extend booking
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Right: bookings sidebar (no card/background) */}
+            <div className="flex flex-col flex-[3.2]">
+              <h2 className="text-2xl font-semibold text-gray-900 mb-4">
+                Bookings
+              </h2>
+
+              <div className="space-y-4 px-4 max-h-[420px] overflow-y-auto">
+                {todayBookingsForSidebar.map((booking) => {
+                  const isTapEnabled =
+                    isAvailable && !showCheckIn && isTodaySelected;
+
+                  return (
+                    <button
+                      key={booking.id}
+                      type="button"
+                      onClick={
+                        isTapEnabled ? () => handleCheckIn(booking.id) : undefined
+                      }
+                      className={`w-full text-left tablet-shadow rounded-3xl px-6 py-3 ${getEventCardColor()} ${
+                        isTapEnabled
+                          ? 'active:scale-[0.99] cursor-pointer'
+                          : 'cursor-default'
+                      } transition-transform`}
+                    >
+                      <div className="flex items-center gap-2 text-gray-900 text-xl font-medium mb-1 tablet-btn">
+                        <span>
+                          {formatTime(booking.start_time)}-
+                          {formatTime(booking.end_time)}
+                        </span>
+                        <span>•</span>
+                        <Users className="w-5 h-5" />
+                        <span>{booking.attendee_count}</span>
+                      </div>
+                      <div className="text-gray-900 text-2xl font-bold tablet-btn">
+                        {booking.title}{' '}
+                        {booking.host_name && <>by {booking.host_name}</>}
+                      </div>
+                      {isTapEnabled && (
+                        <div className="mt-1 text-sm text-gray-900/80 tablet-btn">
+                          Tap to check in
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
           <div
-            className={`flex gap-6 transition-all duration-200 tablet-btn ${
-              hideActions ? 'opacity-0 translate-y-3 pointer-events-none' : 'opacity-100 translate-y-0'
+            className={`flex-1 flex flex-col items-center px-12 tablet-btn ${
+              isAmazon ? 'justify-start pt-4' : 'justify-center'
             }`}
           >
-            {/* Green: quick book */}
-            {isAvailable && !showCheckIn && !showBookingForm && (
-              <button
-                onClick={() => handleQuickBookClick(30)}
-                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
-              >
-                Book Now
-              </button>
-            )}
+            {/* Feature / capacity badges (non-Amazon layouts) */}
+            {!isAmazon && renderFeatureBadges('mb-12')}
 
-            {/* Yellow: check-in for upcoming event */}
-            {showCheckIn && !status.is_occupied && nextBooking && (
-              <button
-                onClick={() => handleCheckIn(nextBooking.id)}
-                className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
-              >
-                Check in
-              </button>
-            )}
+            {/* Room Name */}
+            <h1
+              className={`${
+                isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'
+              } font-bold text-gray-900 ${
+                isTablet8 ? 'mb-8' : 'mb-12'
+              } text-center tablet-btn`}
+            >
+              {status.room_name}
+            </h1>
 
-            {/* Red: in meeting – release / extend */}
-            {!isAvailable && !showCheckIn && (
-              <>
+            {/* Status Info */}
+            <div
+              className={`tablet-btn ${
+                isTablet8
+                  ? status.is_occupied || showCheckIn
+                    ? 'self-start mb-8'
+                    : 'self-center mb-8'
+                  : 'text-center mb-16'
+              }`}
+            >
+              {isTablet8 ? (
+                // 8" layout: when actually in or near a meeting, show a left-aligned
+                // stack under the room name; otherwise keep "Available" centered.
+                status.is_occupied || showCheckIn ? (
+                  <div className="text-left">
+                    {status.is_occupied && statusInfo.subtitle ? (
+                      <>
+                        <h2 className="text-3xl font-semibold text-white">
+                          {statusInfo.subtitle}
+                        </h2>
+                        <h3 className="text-4xl font-semibold text-white mt-1">
+                          {statusInfo.title}
+                        </h3>
+                        {statusInfo.host && (
+                          <p className="text-xl text-white mt-1">
+                            by {statusInfo.host}
+                          </p>
+                        )}
+                      </>
+                    ) : showCheckIn && statusInfo.title ? (
+                      <>
+                        {statusInfo.subtitle && (
+                          <h2 className="text-3xl font-semibold text-black">
+                            {statusInfo.subtitle}
+                          </h2>
+                        )}
+                        <h3 className="text-4xl font-semibold text-black mt-1">
+                          {statusInfo.title}
+                        </h3>
+                        {statusInfo.host && (
+                          <p className="text-xl text-black mt-1">
+                            by {statusInfo.host}
+                          </p>
+                        )}
+                      </>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    {availableDuration ? (
+                      <>
+                        <h2 className="text-4xl font-semibold text-white">
+                          Available for
+                        </h2>
+                        <h3 className="text-5xl font-semibold text-white mt-1">
+                          {availableDuration}
+                        </h3>
+                      </>
+                    ) : (
+                      <h2 className="text-4xl font-semibold text-white">
+                        {statusInfo.title}
+                      </h2>
+                    )}
+                  </div>
+                )
+              ) : (
+                <>
+                  {status.is_occupied && statusInfo.subtitle ? (
+                    <>
+                      <h2
+                        className={`${
+                          isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'
+                        } font-semibold ${getTextColor()} mb-4`}
+                      >
+                        {statusInfo.subtitle} - {statusInfo.title}
+                      </h2>
+                      {statusInfo.host && (
+                        <p
+                          className={`${
+                            isComputer ? 'text-3xl' : 'text-4xl'
+                          } ${getTextColor()}`}
+                        >
+                          by {statusInfo.host}
+                        </p>
+                      )}
+                    </>
+                  ) : showCheckIn && statusInfo.title ? (
+                    <>
+                      <h2
+                        className={`${
+                          isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'
+                        } font-semibold text-black mb-4`}
+                      >
+                        {statusInfo.subtitle} - {statusInfo.title}
+                      </h2>
+                      {statusInfo.host && (
+                        <p
+                          className={`${
+                            isComputer ? 'text-3xl' : 'text-4xl'
+                          } text-black`}
+                        >
+                          by {statusInfo.host}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <h2
+                      className={`${
+                        isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'
+                      } font-semibold text-white`}
+                    >
+                      {statusInfo.title}
+                    </h2>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div
+              className={`flex gap-6 transition-all duration-200 tablet-btn ${
+                hideActions
+                  ? 'opacity-0 translate-y-3 pointer-events-none'
+                  : 'opacity-100 translate-y-0'
+              }`}
+            >
+              {/* Green: quick book */}
+              {isAvailable && !showCheckIn && !showBookingForm && (
                 <button
-                  onClick={endMeeting}
-                  className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-white/90 hover:bg-white text-red-600 rounded-full transition-all"
+                  onClick={() => handleQuickBookClick(30)}
+                  className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
                 >
-                  {requiresReleaseConfirm && pendingRelease
-                    ? 'Confirm Release'
-                    : 'Release Room'}
+                  Book Now
                 </button>
+              )}
+
+              {/* Yellow: check-in for upcoming event */}
+              {showCheckIn && !status.is_occupied && nextBooking && (
                 <button
-                  onClick={() => extendMeeting(30)}
-                  className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-red-400/40 hover:bg-red-400/60 text-white rounded-full transition-all backdrop-blur-sm"
+                  onClick={() => handleCheckIn(nextBooking.id)}
+                  className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
                 >
-                  Extend booking
+                  Check in
                 </button>
-              </>
-            )}
+              )}
+
+              {/* Red: in meeting – release / extend */}
+              {!isAvailable && !showCheckIn && (
+                <>
+                  <button
+                    onClick={endMeeting}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-white/90 hover:bg-white text-red-600 rounded-full transition-all"
+                  >
+                    {requiresReleaseConfirm && pendingRelease
+                      ? 'Confirm Release'
+                      : 'Release Room'}
+                  </button>
+                  <button
+                    onClick={() => extendMeeting(30)}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-red-400/40 hover:bg-red-400/60 text-white rounded-full transition-all backdrop-blur-sm"
+                  >
+                    Extend booking
+                  </button>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Bottom Section - Next Bookings */}
         <div
@@ -1134,48 +1484,58 @@ export default function TabletDisplay() {
           <div
             ref={eventsScrollRef}
             className={`max-w-7xl mx-auto tablet-btn no-scrollbar ${
-              hasBookingsForDay
+              hasBookingsForDay && !(isTablet8 && showSidebarBookings)
                 ? 'max-h-64 overflow-y-auto space-y-5 pb-8 pr-24'
-                : 'h-40 flex items-center justify-center'
+                : 'h-32 flex items-center justify-center'
             }`}
           >
-            {filteredDayBookings.map((booking) => {
-              const isTapEnabled =
-                isAvailable && !showCheckIn && isToday(selectedDate);
+            {isTablet8 && showSidebarBookings ? null : (
+              <>
+                {hasBookingsForDay &&
+                  filteredDayBookings.map((booking) => {
+                    const isTapEnabled =
+                      isAvailable && !showCheckIn && isToday(selectedDate);
 
-              return (
-              <button
-                key={booking.id}
-                type="button"
-                  onClick={isTapEnabled ? () => handleCheckIn(booking.id) : undefined}
-                  className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
-                    isTapEnabled ? 'active:scale-[0.99] cursor-pointer' : 'cursor-default'
-                  } transition-transform`}
-              >
-                <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
-                    <span>
-                      {formatTime(booking.start_time)}-{formatTime(booking.end_time)}
-                    </span>
-                  <span>•</span>
-                  <Users className="w-6 h-6" />
-                  <span>{booking.attendee_count}</span>
-                </div>
-                <div className="text-gray-900 text-3xl font-bold tablet-btn">
-                    {booking.title}{' '}
-                    {booking.host_name && <>by {booking.host_name}</>}
-                </div>
-                  {isTapEnabled && (
-                <div className="mt-1 text-base text-gray-900/80 tablet-btn">
-                  Tap to check in
-                </div>
-                  )}
-              </button>
-              );
-            })}
-            {!hasBookingsForDay && (
-              <div className="text-center text-gray-700 text-3xl">
-                No more bookings today
-              </div>
+                    return (
+                      <button
+                        key={booking.id}
+                        type="button"
+                        onClick={
+                          isTapEnabled ? () => handleCheckIn(booking.id) : undefined
+                        }
+                        className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
+                          isTapEnabled
+                            ? 'active:scale-[0.99] cursor-pointer'
+                            : 'cursor-default'
+                        } transition-transform`}
+                      >
+                        <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
+                          <span>
+                            {formatTime(booking.start_time)}-
+                            {formatTime(booking.end_time)}
+                          </span>
+                          <span>•</span>
+                          <Users className="w-6 h-6" />
+                          <span>{booking.attendee_count}</span>
+                        </div>
+                        <div className="text-gray-900 text-3xl font-bold tablet-btn">
+                          {booking.title}{' '}
+                          {booking.host_name && <>by {booking.host_name}</>}
+                        </div>
+                        {isTapEnabled && (
+                          <div className="mt-1 text-base text-gray-900/80 tablet-btn">
+                            Tap to check in
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                {!hasBookingsForDay && (
+                  <div className="text-center text-gray-700 text-3xl">
+                    No more bookings today
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1206,8 +1566,9 @@ export default function TabletDisplay() {
 
         {/* Booking Form Modal (status view) */}
         {showBookingForm && !showMap && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
-<div className="bg-white rounded-3xl p-8 shadow-2xl max-w-2xl w-full h-[80vh] overflow-y-auto">              <div className="text-center text-3xl font-bold text-gray-900 mb-2">
+          <div className={bookingOverlayContainerClass}>
+            <div className={bookingOverlayCardClass}>
+              <div className="text-center text-3xl font-bold text-gray-900 mb-2">
                 Book {bookingTarget?.roomName || status.room_name}
               </div>
               <div className="text-center text-lg text-gray-600 mb-6">
@@ -1216,45 +1577,60 @@ export default function TabletDisplay() {
                   : 'Select a duration · starting now'}
               </div>
 
-              {/* Duration selection */}
-              <div className="mb-6">
-                <div className="text-center text-lg font-medium text-gray-800 mb-3">
-                  Duration
-                </div>
-                <div className="flex flex-wrap justify-center gap-3">
-                  {durationOptions.map((minutes) => {
-                    const disabled =
-                      activeAvailableMinutes !== null &&
-                      minutes > activeAvailableMinutes;
-                    const isSelected = selectedDuration === minutes;
-
-                    return (
-                      <button
-                        key={minutes}
-                        type="button"
-                        onClick={() => !disabled && setSelectedDuration(minutes)}
-                        disabled={disabled}
-                        className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
-                          disabled
-                            ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-gray-900 text-white border-gray-900'
-                            : 'border-gray-400 text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        {minutes === 60 ? '1 hr' : `${minutes} min`}
-                      </button>
-                    );
-                  })}
-                </div>
-                {activeAvailableMinutes !== null && (
-                  <div className="mt-3 text-center text-sm text-gray-500">
-                    Available for {activeAvailableMinutes} min
+              <div
+                className={
+                  isTablet8 ? 'flex flex-row gap-6 items-start' : undefined
+                }
+              >
+                {/* Duration selection */}
+                <div className={isTablet8 ? 'w-2/5 mb-0' : 'mb-6'}>
+                  <div className="text-center text-lg font-medium text-gray-800 mb-3">
+                    Duration
                   </div>
-                )}
-              </div>
+                  <div
+                    className={
+                      isTablet8
+                        ? 'flex flex-col items-stretch gap-3'
+                        : 'flex flex-wrap justify-center gap-3'
+                    }
+                  >
+                    {durationOptions.map((minutes) => {
+                      const disabled =
+                        activeAvailableMinutes !== null &&
+                        minutes > activeAvailableMinutes;
+                      const isSelected = selectedDuration === minutes;
 
-              <div className="space-y-4">
+                      return (
+                        <button
+                          key={minutes}
+                          type="button"
+                          onClick={() => !disabled && setSelectedDuration(minutes)}
+                          disabled={disabled}
+                          className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
+                            disabled
+                              ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                              : isSelected
+                              ? 'bg-gray-900 text-white border-gray-900'
+                              : 'border-gray-400 text-gray-800 hover:bg-gray-100'
+                          }`}
+                        >
+                          {minutes === 60 ? '1 hr' : `${minutes} min`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {activeAvailableMinutes !== null && (
+                    <div className="mt-3 text-center text-sm text-gray-500">
+                      Available for {activeAvailableMinutes} min
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  className={
+                    isTablet8 ? 'flex-1 space-y-4' : 'space-y-4'
+                  }
+                >
                 {/* Host Selection */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1267,7 +1643,10 @@ export default function TabletDisplay() {
                         <div className="text-sm text-gray-600">{selectedHost.email}</div>
                       </div>
                       <button
-                        onClick={() => setBookingForm({ ...bookingForm, hostId: '' })}
+                        onClick={() => {
+                          setBookingForm({ ...bookingForm, hostId: '' });
+                          setSearchTerm('');
+                        }}
                         className="text-red-600 hover:text-red-800 font-semibold"
                       >
                         Change
@@ -1281,23 +1660,25 @@ export default function TabletDisplay() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search by name or email..."
                         className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-lg focus:outline-none focus:border-green-500 text-gray-900 mb-2"
-                        autoFocus
+                        autoFocus={!isAmazon}
                       />
-                      <div className="max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl">
-                        {filteredUsers.slice(0, 5).map(user => (
-                          <button
-                            key={user.id}
-                            onClick={() => {
-                              setBookingForm({ ...bookingForm, hostId: user.id });
-                              setSearchTerm('');
-                            }}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                          >
-                            <div className="font-semibold text-gray-900">{user.name}</div>
-                            <div className="text-sm text-gray-600">{user.email}</div>
-                          </button>
-                        ))}
-                      </div>
+                      {searchTerm.trim() && (
+                        <div className="max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl">
+                          {filteredUsers.slice(0, 5).map(user => (
+                            <button
+                              key={user.id}
+                              onClick={() => {
+                                setBookingForm({ ...bookingForm, hostId: user.id });
+                                setSearchTerm('');
+                              }}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                            >
+                              <div className="font-semibold text-gray-900">{user.name}</div>
+                              <div className="text-sm text-gray-600">{user.email}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1350,25 +1731,26 @@ export default function TabletDisplay() {
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="pt-4 flex flex-col sm:flex-row gap-3">
-                  <button
-                    type="button"
-                    onClick={handleCancelBooking}
-                    className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={quickBook}
-                    disabled={
-                      bookingInProgress || !bookingForm.hostId || !selectedDuration
-                    }
-                    className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
-                  >
-                    {bookingInProgress ? 'Booking…' : 'Book now'}
-                  </button>
+                  {/* Actions */}
+                  <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                    <button
+                      type="button"
+                      onClick={handleCancelBooking}
+                      className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={quickBook}
+                      disabled={
+                        bookingInProgress || !bookingForm.hostId || !selectedDuration
+                      }
+                      className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
+                    >
+                      {bookingInProgress ? 'Booking…' : 'Book now'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1493,9 +1875,10 @@ export default function TabletDisplay() {
 
               {/* Booking overlay on top of map */}
               {showBookingForm && bookingTarget && (
-                <div className="absolute inset-x-0 bottom-0 pb-10 flex justify-center pointer-events-none">
-                  <div className="pointer-events-auto w-full max-w-2xl px-6">
-                  <div className="bg-white rounded-3xl p-8 shadow-2xl h-[70vh] overflow-y-auto">                      <div className="text-center text-3xl font-bold text-gray-900 mb-2">
+                <div className={mapBookingOverlayContainerClass}>
+                  <div className={mapBookingOverlayCardWrapperClass}>
+                    <div className={mapBookingOverlayCardClass}>
+                      <div className="text-center text-3xl font-bold text-gray-900 mb-2">
                         Book {bookingTarget.roomName}
                       </div>
                       <div className="text-center text-lg text-gray-600 mb-6">
@@ -1504,45 +1887,60 @@ export default function TabletDisplay() {
                           : 'Select a duration · starting now'}
                       </div>
 
-                      {/* Duration selection */}
-                      <div className="mb-6">
-                        <div className="text-center text-lg font-medium text-gray-800 mb-3">
-                          Duration
-                        </div>
-                        <div className="flex flex-wrap justify-center gap-3">
-                          {durationOptions.map((minutes) => {
-                            const disabled =
-                              activeAvailableMinutes !== null &&
-                              minutes > activeAvailableMinutes;
-                            const isSelected = selectedDuration === minutes;
-
-                            return (
-                              <button
-                                key={minutes}
-                                type="button"
-                                onClick={() => !disabled && setSelectedDuration(minutes)}
-                                disabled={disabled}
-                                className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
-                                  disabled
-                                    ? 'border-gray-200 text-gray-300 cursor-not-allowed'
-                                    : isSelected
-                                    ? 'bg-gray-900 text-white border-gray-900'
-                                    : 'border-gray-400 text-gray-800 hover:bg-gray-100'
-                                }`}
-                              >
-                                {minutes === 60 ? '1 hr' : `${minutes} min`}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        {activeAvailableMinutes !== null && (
-                          <div className="mt-3 text-center text-sm text-gray-500">
-                            Available for {activeAvailableMinutes} min
+                      <div
+                        className={
+                          isTablet8 ? 'flex flex-row gap-6 items-start' : undefined
+                        }
+                      >
+                        {/* Duration selection */}
+                        <div className={isTablet8 ? 'w-2/5 mb-0' : 'mb-6'}>
+                          <div className="text-center text-lg font-medium text-gray-800 mb-3">
+                            Duration
                           </div>
-                        )}
-                      </div>
+                          <div
+                            className={
+                              isTablet8
+                                ? 'flex flex-col items-stretch gap-3'
+                                : 'flex flex-wrap justify-center gap-3'
+                            }
+                          >
+                            {durationOptions.map((minutes) => {
+                              const disabled =
+                                activeAvailableMinutes !== null &&
+                                minutes > activeAvailableMinutes;
+                              const isSelected = selectedDuration === minutes;
 
-                      <div className="space-y-4">
+                              return (
+                                <button
+                                  key={minutes}
+                                  type="button"
+                                  onClick={() => !disabled && setSelectedDuration(minutes)}
+                                  disabled={disabled}
+                                  className={`px-5 py-2 rounded-full border-2 text-lg font-semibold transition-colors ${
+                                    disabled
+                                      ? 'border-gray-200 text-gray-300 cursor-not-allowed'
+                                      : isSelected
+                                      ? 'bg-gray-900 text-white border-gray-900'
+                                      : 'border-gray-400 text-gray-800 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {minutes === 60 ? '1 hr' : `${minutes} min`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {activeAvailableMinutes !== null && (
+                            <div className="mt-3 text-center text-sm text-gray-500">
+                              Available for {activeAvailableMinutes} min
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={
+                            isTablet8 ? 'flex-1 space-y-4' : 'space-y-4'
+                          }
+                        >
                         {/* Host Selection */}
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1555,7 +1953,10 @@ export default function TabletDisplay() {
                                 <div className="text-sm text-gray-600">{selectedHost.email}</div>
                               </div>
                               <button
-                                onClick={() => setBookingForm({ ...bookingForm, hostId: '' })}
+                                onClick={() => {
+                                  setBookingForm({ ...bookingForm, hostId: '' });
+                                  setSearchTerm('');
+                                }}
                                 className="text-red-600 hover:text-red-800 font-semibold"
                               >
                                 Change
@@ -1569,23 +1970,25 @@ export default function TabletDisplay() {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 placeholder="Search by name or email..."
                                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-lg focus:outline-none focus:border-green-500 text-gray-900 mb-2"
-                                autoFocus
+                                autoFocus={!isAmazon}
                               />
-                              <div className="max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl">
-                                {filteredUsers.slice(0, 5).map((user) => (
-                                  <button
-                                    key={user.id}
-                                    onClick={() => {
-                                      setBookingForm({ ...bookingForm, hostId: user.id });
-                                      setSearchTerm('');
-                                    }}
-                                    className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
-                                  >
-                                    <div className="font-semibold text-gray-900">{user.name}</div>
-                                    <div className="text-sm text-gray-600">{user.email}</div>
-                                  </button>
-                                ))}
-                              </div>
+                              {searchTerm.trim() && (
+                                <div className="max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl">
+                                  {filteredUsers.slice(0, 5).map((user) => (
+                                    <button
+                                      key={user.id}
+                                      onClick={() => {
+                                        setBookingForm({ ...bookingForm, hostId: user.id });
+                                        setSearchTerm('');
+                                      }}
+                                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0"
+                                    >
+                                      <div className="font-semibold text-gray-900">{user.name}</div>
+                                      <div className="text-sm text-gray-600">{user.email}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </>
                           )}
                         </div>
@@ -1641,23 +2044,24 @@ export default function TabletDisplay() {
                           )}
                         </div>
 
-                        {/* Actions */}
-                        <div className="pt-4 flex flex-col sm:flex-row gap-3">
-                          <button
-                            type="button"
-                            onClick={handleCancelBooking}
-                            className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            onClick={quickBook}
-                            disabled={bookingInProgress || !bookingForm.hostId || !selectedDuration}
-                            className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
-                          >
-                            {bookingInProgress ? 'Booking…' : 'Book now'}
-                          </button>
+                          {/* Actions */}
+                          <div className="pt-4 flex flex-col sm:flex-row gap-3">
+                            <button
+                              type="button"
+                              onClick={handleCancelBooking}
+                              className="flex-1 h-12 rounded-full border border-gray-300 text-gray-700 font-medium hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={quickBook}
+                              disabled={bookingInProgress || !bookingForm.hostId || !selectedDuration}
+                              className="flex-1 h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black disabled:opacity-50"
+                            >
+                              {bookingInProgress ? 'Booking…' : 'Book now'}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>

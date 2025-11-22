@@ -20,7 +20,7 @@ export default function TabletRoomSelector() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
-  const [deviceType, setDeviceType] = useState<'computer' | 'ipad' | 'amazon'>('ipad');
+  const [deviceType, setDeviceType] = useState<'computer' | 'ipad' | 'tablet10' | 'tablet8'>('ipad');
 
   useEffect(() => {
     fetchRooms();
@@ -87,7 +87,8 @@ export default function TabletRoomSelector() {
           {[
             { id: 'computer', label: 'Computer' },
             { id: 'ipad', label: 'iPad' },
-            { id: 'amazon', label: 'Amazon tablet' },
+            { id: 'tablet10', label: 'Tablet 10\"' },
+            { id: 'tablet8', label: 'Tablet 8\"' },
           ].map((device) => (
             <button
               key={device.id}

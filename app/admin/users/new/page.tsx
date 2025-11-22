@@ -50,7 +50,10 @@ export default function NewUserPage() {
       const response = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          company_id: formData.company_id || null,
+        }),
       });
 
       const result = await response.json();

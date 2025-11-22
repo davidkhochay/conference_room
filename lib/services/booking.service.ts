@@ -37,8 +37,10 @@ export class BookingService {
     const endTime = new Date(now.getTime() + request.duration_minutes * 60 * 1000);
 
     // Check if room is available using Google Calendar
+    const calendarIdForAvailability =
+      room.google_calendar_id || room.google_resource_id;
     const availability = await this.checkRoomAvailability(
-      room.google_calendar_id || room.google_resource_id,
+      calendarIdForAvailability,
       startTime.toISOString(),
       endTime.toISOString()
     );
@@ -78,21 +80,30 @@ export class BookingService {
     // Create Google Calendar event (optional - booking works without it)
     try {
       const calendarId = room.google_calendar_id || room.google_resource_id;
-      
+
       if (calendarId) {
-        const event = await this.googleCalendar.createEvent(calendarId, {
-          summary: 'Walk-up Booking',
-          description: `Quick booking from ${room.name}`,
-          start: {
-            dateTime: startTime.toISOString(),
-            timeZone: room.location.timezone,
+        const event = await this.googleCalendar.createEvent(
+          calendarId,
+          {
+            summary: 'Walk-up Booking',
+            description: `Quick booking from ${room.name}`,
+            start: {
+              dateTime: startTime.toISOString(),
+              timeZone: room.location.timezone,
+            },
+            end: {
+              dateTime: endTime.toISOString(),
+              timeZone: room.location.timezone,
+            },
+            attendees:
+              room.google_calendar_id
+                ? [{ email: room.google_calendar_id, resource: true }]
+                : [],
           },
-          end: {
-            dateTime: endTime.toISOString(),
-            timeZone: room.location.timezone,
-          },
-          attendees: room.google_resource_id ? [{ email: room.google_resource_id, resource: true }] : [],
-        });
+          {
+            glc_booking_id: booking.id,
+          }
+        );
 
         // Update booking with Google event ID
         await this.supabase
@@ -115,6 +126,97 @@ export class BookingService {
     });
 
     return booking;
+  }
+
+  /**
+   * Mark stale, never-checked-in bookings as no-shows.
+   *
+   * A booking is considered a no-show when:
+   * - status is still 'scheduled'
+   * - check_in_time IS NULL
+   * - start_time is at least `graceMinutes` minutes in the past
+   *
+   * Optionally scope the scan to a single room to keep the work small for
+   * per-room status checks (e.g. tablet / room-status endpoint).
+   */
+  async markNoShows(options?: { roomId?: string }): Promise<{
+    updatedCount: number;
+    graceMinutes: number;
+  }> {
+    const graceMinutes = await this.getNoShowGraceMinutes();
+    const cutoff = new Date(Date.now() - graceMinutes * 60 * 1000).toISOString();
+
+    // Find stale bookings that never checked in
+    let query = this.supabase
+      .from('bookings')
+      .select('id, google_event_id, google_calendar_id')
+      .is('check_in_time', null)
+      .eq('status', 'scheduled')
+      .lte('start_time', cutoff);
+
+    if (options?.roomId) {
+      query = query.eq('room_id', options.roomId);
+    }
+
+    const { data: staleBookings, error: findError } = await query.limit(500);
+
+    if (findError) {
+      throw new Error(`Failed to scan for no-shows: ${findError.message}`);
+    }
+
+    if (!staleBookings || staleBookings.length === 0) {
+      return { updatedCount: 0, graceMinutes };
+    }
+
+    const ids = staleBookings.map((b) => b.id as string);
+
+    // Update bookings to no_show
+    const { data: updated, error: updateError } = await this.supabase
+      .from('bookings')
+      .update({ status: 'no_show' })
+      .in('id', ids)
+      .select('id');
+
+    if (updateError) {
+      throw new Error(`Failed to mark no-shows: ${updateError.message}`);
+    }
+
+    // Log booking activity for analytics / audit
+    await this.supabase.from('booking_activity_log').insert(
+      ids.map((bookingId) => ({
+        booking_id: bookingId,
+        action: 'no_show',
+        performed_by_user_id: null,
+        metadata: {
+          reason: 'auto_no_checkin',
+          grace_minutes: graceMinutes,
+        },
+      }))
+    );
+
+    // Best-effort cleanup of Google Calendar events so the room is truly free
+    // for re-booking in Google as well as in our local system.
+    for (const stale of staleBookings) {
+      if (stale.google_event_id && stale.google_calendar_id) {
+        try {
+          await this.googleCalendar.deleteEvent(
+            stale.google_calendar_id,
+            stale.google_event_id
+          );
+        } catch (e) {
+          // Swallow errors here so one bad calendar event does not block the scan
+          console.error('Failed to delete Google event for no-show booking', {
+            bookingId: stale.id,
+            error: e,
+          });
+        }
+      }
+    }
+
+    return {
+      updatedCount: updated?.length ?? 0,
+      graceMinutes,
+    };
   }
 
   /**
@@ -144,14 +246,36 @@ export class BookingService {
     }
 
     // Check availability
+    const calendarIdForAvailability =
+      room.google_calendar_id || room.google_resource_id;
     const availability = await this.checkRoomAvailability(
-      room.google_calendar_id || room.google_resource_id,
+      calendarIdForAvailability,
       request.start_time,
       request.end_time
     );
 
     if (!availability.isAvailable) {
       throw new Error('Room is not available for the requested time');
+    }
+
+    // If a host is specified, ensure the user exists and is active.
+    let host: User | null = null;
+    if (request.host_user_id) {
+      const { data: hostData, error: hostError } = await this.supabase
+        .from('users')
+        .select()
+        .eq('id', request.host_user_id)
+        .single();
+
+      if (hostError || !hostData) {
+        throw new Error('Host user not found');
+      }
+
+      if (hostData.status !== 'active') {
+        throw new Error('Selected host is not active');
+      }
+
+      host = hostData as User;
     }
 
     // Create booking
@@ -175,43 +299,42 @@ export class BookingService {
       throw new Error('Failed to create booking');
     }
 
-    // Get host details if available
-    let host: User | null = null;
-    if (request.host_user_id) {
-      const { data: hostData } = await this.supabase
-        .from('users')
-        .select()
-        .eq('id', request.host_user_id)
-        .single();
-      host = hostData;
-    }
-
     // Create Google Calendar event (optional - booking works without it)
     try {
       const calendarId = room.google_calendar_id || room.google_resource_id;
-      
+
       if (calendarId) {
         const attendees: Array<{ email: string; resource?: boolean }> = [
           ...(request.attendee_emails || []).map(email => ({ email })),
         ];
 
-        if (room.google_resource_id) {
-          attendees.push({ email: room.google_resource_id, resource: true });
+        if (room.google_calendar_id) {
+          attendees.push({ email: room.google_calendar_id, resource: true });
         }
 
-        const event = await this.googleCalendar.createEvent(calendarId, {
-          summary: request.title || 'Conference Room Booking',
-          description: request.description || `Booked via Good Life Room Booking\nRoom: ${room.name}\nHost: ${host?.name || 'N/A'}`,
-          start: {
-            dateTime: request.start_time,
-            timeZone: room.location.timezone,
+        const event = await this.googleCalendar.createEvent(
+          calendarId,
+          {
+            summary: request.title || 'Conference Room Booking',
+            description:
+              request.description ||
+              `Booked via Good Life Room Booking\nRoom: ${room.name}\nHost: ${
+                host?.name || 'N/A'
+              }`,
+            start: {
+              dateTime: request.start_time,
+              timeZone: room.location.timezone,
+            },
+            end: {
+              dateTime: request.end_time,
+              timeZone: room.location.timezone,
+            },
+            attendees,
           },
-          end: {
-            dateTime: request.end_time,
-            timeZone: room.location.timezone,
-          },
-          attendees,
-        });
+          {
+            glc_booking_id: booking.id,
+          }
+        );
 
         // Update booking with event ID
         await this.supabase
@@ -254,8 +377,8 @@ export class BookingService {
       throw new Error('Booking not found');
     }
 
-    if (booking.status === 'ended' || booking.status === 'cancelled') {
-      throw new Error('Cannot extend a completed or cancelled booking');
+    if (booking.status === 'ended' || booking.status === 'cancelled' || booking.status === 'no_show') {
+      throw new Error('Cannot extend a completed, cancelled, or no-show booking');
     }
 
     const newEndTime = new Date(new Date(booking.end_time).getTime() + additionalMinutes * 60 * 1000);
@@ -313,14 +436,18 @@ export class BookingService {
    * Cancel a booking
    */
   async cancelBooking(bookingId: string, userId?: string): Promise<void> {
-    const { data: booking } = await this.supabase
+    const { data: booking, error } = await this.supabase
       .from('bookings')
       .select()
       .eq('id', bookingId)
       .single();
 
-    if (!booking) {
+    if (error || !booking) {
       throw new Error('Booking not found');
+    }
+
+    if (booking.status === 'cancelled' || booking.status === 'ended' || booking.status === 'no_show') {
+      throw new Error('Cannot cancel a completed or no-show booking');
     }
 
     // Update booking status
@@ -349,6 +476,21 @@ export class BookingService {
    * Check in to a booking
    */
   async checkInBooking(bookingId: string, userId?: string): Promise<Booking> {
+    // Fetch current status first so we can enforce valid transitions
+    const { data: existing, error: fetchError } = await this.supabase
+      .from('bookings')
+      .select()
+      .eq('id', bookingId)
+      .single();
+
+    if (fetchError || !existing) {
+      throw new Error('Booking not found');
+    }
+
+    if (existing.status === 'cancelled' || existing.status === 'ended' || existing.status === 'no_show') {
+      throw new Error('Cannot check in to a cancelled, ended, or no-show booking');
+    }
+
     const { data: booking, error } = await this.supabase
       .from('bookings')
       .update({
@@ -372,14 +514,18 @@ export class BookingService {
    * End a booking early
    */
   async endBookingEarly(bookingId: string, userId?: string): Promise<void> {
-    const { data: booking } = await this.supabase
+    const { data: booking, error } = await this.supabase
       .from('bookings')
       .select()
       .eq('id', bookingId)
       .single();
 
-    if (!booking) {
+    if (error || !booking) {
       throw new Error('Booking not found');
+    }
+
+    if (booking.status === 'cancelled' || booking.status === 'ended' || booking.status === 'no_show') {
+      throw new Error('Cannot end a cancelled, ended, or no-show booking');
     }
 
     const now = new Date();
@@ -451,7 +597,27 @@ export class BookingService {
       .eq('scope', 'global')
       .single();
 
-    return data?.value || 240; // Default 4 hours
+    const raw = data?.value;
+    const asNumber =
+      typeof raw === 'number' ? raw : Number(typeof raw === 'string' ? raw : NaN);
+    return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : 240; // Default 4 hours
+  }
+
+  /**
+   * Get the no-show grace window (in minutes) from settings, defaulting to 10.
+   */
+  private async getNoShowGraceMinutes(): Promise<number> {
+    const { data } = await this.supabase
+      .from('settings')
+      .select()
+      .eq('key', 'no_show_grace_minutes')
+      .eq('scope', 'global')
+      .maybeSingle();
+
+    const raw = data?.value;
+    const asNumber =
+      typeof raw === 'number' ? raw : Number(typeof raw === 'string' ? raw : NaN);
+    return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : 10;
   }
 
   /**

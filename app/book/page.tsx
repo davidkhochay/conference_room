@@ -50,6 +50,7 @@ export default function BookingPage() {
   const [rooms, setRooms] = useState<RoomWithAvailability[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
+  const [copyToast, setCopyToast] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -148,6 +149,32 @@ export default function BookingPage() {
       ? rooms
       : rooms.filter((room) => room.location.name === selectedLocation);
 
+  const handleCopyPublicLink = async () => {
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : '';
+    const url = `${origin}/book/public`;
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      }
+
+      if (typeof window !== 'undefined') {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+
+      setCopyToast('Public link copied to clipboard');
+      setTimeout(() => setCopyToast(null), 2500);
+    } catch (error) {
+      console.error('Failed to copy public link:', error);
+      if (typeof window !== 'undefined') {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setCopyToast('Opened public booking page');
+      setTimeout(() => setCopyToast(null), 2500);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F7F3EC]">
       {/* Header */}
@@ -164,13 +191,22 @@ export default function BookingPage() {
               Browse rooms across locations and see what’s free right now.
             </p>
           </div>
-              <Link href="/">
-            <button className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4" />
-                  Home
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCopyPublicLink}
+              className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2"
+            >
+              <span>Public link</span>
             </button>
-              </Link>
-            </div>
+            <Link href="/">
+              <button className="tablet-shadow px-4 py-2 rounded-full bg-white text-gray-800 text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
+                <ArrowLeft className="w-4 h-4" />
+                Home
+              </button>
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Location Filter */}
@@ -381,6 +417,12 @@ export default function BookingPage() {
           </div>
         )}
       </div>
+
+      {copyToast && (
+        <div className="fixed bottom-4 right-4 px-4 py-3 rounded-full bg-gray-900 text-white text-sm tablet-shadow">
+          {copyToast}
+        </div>
+      )}
     </div>
   );
 }

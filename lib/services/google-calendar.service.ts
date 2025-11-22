@@ -13,7 +13,9 @@ export class GoogleCalendarService {
         'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/calendar.events',
         'https://www.googleapis.com/auth/admin.directory.resource.calendar',
+        'https://www.googleapis.com/auth/admin.directory.user.readonly',
       ],
+      subject: process.env.GOOGLE_CALENDAR_ADMIN_EMAIL,
     });
 
     this.calendar = google.calendar({ version: 'v3', auth: this.auth });
@@ -50,11 +52,19 @@ export class GoogleCalendarService {
       end: { dateTime: string; timeZone: string };
       attendees?: Array<{ email: string; resource?: boolean }>;
       conferenceData?: any;
-    }
+    },
+    privateExtendedProps?: Record<string, string>
   ): Promise<calendar_v3.Schema$Event> {
     const response = await this.calendar.events.insert({
       calendarId,
-      requestBody: eventData,
+      requestBody: {
+        ...eventData,
+        extendedProperties: privateExtendedProps
+          ? {
+              private: privateExtendedProps,
+            }
+          : eventData && (eventData as any).extendedProperties,
+      },
       sendUpdates: 'all',
     });
 
@@ -119,15 +129,31 @@ export class GoogleCalendarService {
     timeMin: string,
     timeMax: string
   ): Promise<calendar_v3.Schema$Event[]> {
-    const response = await this.calendar.events.list({
-      calendarId,
-      timeMin,
-      timeMax,
-      singleEvents: true,
-      orderBy: 'startTime',
-    });
+    try {
+      const response = await this.calendar.events.list({
+        calendarId,
+        timeMin,
+        timeMax,
+        showDeleted: true,
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
 
-    return response.data.items || [];
+      return response.data.items || [];
+    } catch (error: any) {
+      // Surface rich diagnostics to the server log so 404/permission issues are
+      // easy to understand when wiring up new rooms or domains.
+      console.error('GoogleCalendarService.listEvents failed', {
+        calendarId,
+        timeMin,
+        timeMax,
+        message: error?.message,
+        code: error?.code,
+        status: error?.status,
+        errors: error?.errors,
+      });
+      throw error;
+    }
   }
 
   /**

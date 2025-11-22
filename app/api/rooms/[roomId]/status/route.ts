@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerAdminClient } from '@/lib/supabase/server';
+import { getBookingService } from '@/lib/services/booking.service';
+import { syncRoomFromGoogle } from '@/lib/services/google-sync.service';
 import { RoomStatusResponse } from '@/lib/types/api.types';
 
 export async function GET(
@@ -9,6 +11,20 @@ export async function GET(
   try {
     const { roomId } = await params;
     const supabase = getServerAdminClient();
+
+    // Opportunistically refresh bookings for this room from Google Calendar so
+    // tablets and maps see Google‑originated meetings as well.
+    try {
+      await syncRoomFromGoogle(roomId);
+    } catch (e) {
+      console.error('Failed to sync room from Google (non-fatal):', e);
+    }
+
+    // Opportunistically mark any stale bookings for this room as no-shows so
+    // tablets and other clients see an up-to-date status without waiting for
+    // the global job or cron to run.
+    const bookingService = getBookingService();
+    await bookingService.markNoShows({ roomId });
 
     // Get room details
     const { data: room, error: roomError } = await supabase
@@ -39,8 +55,9 @@ export async function GET(
 
     const currentBooking = inProgressBooking || null;
 
-    // Get upcoming scheduled bookings, including ones that started within the last 15 minutes
-    const graceMinutes = 15;
+    // Get upcoming scheduled bookings, including ones that started within the last
+    // 10 minutes. The same 10 minute window is used by the no-show scanner.
+    const graceMinutes = 10;
     const windowStart = new Date(now.getTime() - graceMinutes * 60 * 1000).toISOString();
 
     const { data: scheduledBookings } = await supabase

@@ -1,14 +1,30 @@
 import { google, admin_directory_v1 } from 'googleapis';
 import { JWT } from 'google-auth-library';
 
+type ServiceAccountConfig = {
+  clientEmail?: string;
+  privateKey?: string;
+};
+
 export class GoogleDirectoryService {
   private admin: admin_directory_v1.Admin;
   private auth: JWT;
 
-  constructor() {
+  constructor(config?: ServiceAccountConfig) {
+    const clientEmail =
+      config?.clientEmail || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    const rawKey =
+      config?.privateKey || process.env.GOOGLE_PRIVATE_KEY || '';
+
+    if (!clientEmail || !rawKey) {
+      throw new Error(
+        'GoogleDirectoryService is missing service account credentials'
+      );
+    }
+
     this.auth = new JWT({
-      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      email: clientEmail,
+      key: rawKey.replace(/\\n/g, '\n'),
       scopes: [
         'https://www.googleapis.com/auth/admin.directory.user.readonly',
         'https://www.googleapis.com/auth/admin.directory.resource.calendar',
@@ -180,5 +196,31 @@ export function getGoogleDirectoryService(): GoogleDirectoryService {
     googleDirectoryService = new GoogleDirectoryService();
   }
   return googleDirectoryService;
+}
+
+/**
+ * Factory helper that builds a Google Directory client for a specific
+ * domain integration. If no per-domain service account config is present,
+ * it falls back to the global singleton.
+ */
+export function createDirectoryServiceForIntegration(integration: {
+  service_account_config?: Record<string, any> | null;
+}): GoogleDirectoryService {
+  const cfg = integration.service_account_config as
+    | {
+        client_email?: string;
+        private_key?: string;
+      }
+    | null
+    | undefined;
+
+  if (cfg?.client_email && cfg?.private_key) {
+    return new GoogleDirectoryService({
+      clientEmail: cfg.client_email,
+      privateKey: cfg.private_key,
+    });
+  }
+
+  return getGoogleDirectoryService();
 }
 

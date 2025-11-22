@@ -116,24 +116,28 @@ export type RoomAvailability = {
   }>;
 };
 
-// User request schemas
+// User request schemas (internal app users, not raw Google objects)
 export const CreateUserSchema = z.object({
-  google_user_id: z.string(),
-  primary_email: z.string().email(),
+  google_user_id: z.string().optional(),
+  email: z.string().email(),
   name: z.string(),
-  company_id: z.string().uuid(),
-  is_admin: z.boolean().default(false),
+  company_id: z.string().uuid().nullable().optional(),
+  role: z.enum(['user', 'admin']).default('user'),
   is_location_manager: z.boolean().default(false),
   photo_url: z.string().url().optional(),
+  status: z.enum(['active', 'inactive', 'deleted']).default('active'),
 });
 
 export type CreateUserRequest = z.infer<typeof CreateUserSchema>;
 
 export const UpdateUserSchema = z.object({
   name: z.string().optional(),
-  is_admin: z.boolean().optional(),
+  email: z.string().email().optional(),
+  company_id: z.string().uuid().nullable().optional(),
+  role: z.enum(['user', 'admin']).optional(),
   is_location_manager: z.boolean().optional(),
   status: z.enum(['active', 'inactive', 'deleted']).optional(),
+  photo_url: z.string().url().optional(),
 });
 
 export type UpdateUserRequest = z.infer<typeof UpdateUserSchema>;
