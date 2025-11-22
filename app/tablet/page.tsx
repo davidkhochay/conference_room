@@ -93,7 +93,7 @@ export default function TabletRoomSelector() {
             <button
               key={device.id}
               type="button"
-              onClick={() => setDeviceType(device.id as 'computer' | 'ipad' | 'amazon')}
+              onClick={() => setDeviceType(device.id as 'computer' | 'ipad' | 'tablet10' | 'tablet8')}
               className={`px-3 py-1 rounded-full text-sm font-medium ${
                 deviceType === device.id ? 'bg-gray-900 text-white' : 'text-gray-700'
               }`}
