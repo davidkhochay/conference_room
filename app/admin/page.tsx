@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Building2, MapPin, DoorOpen, Users, Calendar, Clock } from 'lucide-react';
 import { bucketBookings, normalizeBookingStatus } from '@/lib/utils/bookingStatus';
+import { BookingDetailsModal } from '@/lib/components/admin/BookingDetailsModal';
 
 interface Booking {
   id: string;
@@ -76,6 +77,7 @@ export default function AdminDashboard() {
   });
   const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -195,7 +197,8 @@ export default function AdminDashboard() {
     return (
       <div
         key={booking.id}
-        className="p-4 rounded-2xl bg-white hover:bg-gray-50 shadow-sm border border-gray-100 transition-colors"
+        className="p-4 rounded-2xl bg-white hover:bg-gray-50 shadow-sm border border-gray-100 transition-colors cursor-pointer"
+        onClick={() => setSelectedBookingId(booking.id)}
       >
         {/* Title + status pill */}
         <div className="flex items-start justify-between gap-3 mb-2">
@@ -296,6 +299,14 @@ export default function AdminDashboard() {
           );
         })()}
       </section>
+
+      {/* Booking Details Modal */}
+      {selectedBookingId && (
+        <BookingDetailsModal
+          bookingId={selectedBookingId}
+          onClose={() => setSelectedBookingId(null)}
+        />
+      )}
     </div>
   );
 }
