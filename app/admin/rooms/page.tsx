@@ -23,12 +23,14 @@ export default function RoomsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    document.title = 'Rooms | Good Life Rooms';
     fetchRooms();
   }, []);
 
   const fetchRooms = async () => {
     try {
-      const response = await fetch('/api/rooms');
+      // Admin panel should show ALL rooms, including disabled ones
+      const response = await fetch('/api/rooms?status=all');
       const result = await response.json();
       if (result.success) {
         setRooms(result.data);
@@ -114,7 +116,9 @@ export default function RoomsPage() {
                     className={`px-3 py-1 text-xs font-semibold rounded-full backdrop-blur-sm ${
                       room.status === 'active'
                         ? 'bg-green-500/90 text-white'
-                        : 'bg-gray-500/90 text-white'
+                        : room.status === 'maintenance'
+                        ? 'bg-orange-500/90 text-white'
+                        : 'bg-red-500/90 text-white'
                     }`}
                   >
                     {room.status}
@@ -156,7 +160,7 @@ export default function RoomsPage() {
                 </div>
 
                 {/* Features (tv / whiteboard only) */}
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-2 min-h-[2rem]">
                   {room.features?.tv && (
                     <span className="px-3 py-1 text-xs rounded-full bg-gray-100 text-gray-800 flex items-center gap-1">
                       <span className="inline-block w-3 h-3 rounded-sm bg-gray-700" />
@@ -169,25 +173,26 @@ export default function RoomsPage() {
                       whiteboard
                     </span>
                   )}
+                  {!room.features?.tv && !room.features?.whiteboard && (
+                    <span className="text-xs text-gray-400 italic py-1">No features</span>
+                  )}
                 </div>
 
                 {/* Actions */}
-                <div className="flex gap-2 pt-2">
+                <div className="flex gap-2 pt-2 items-center">
                   <Link href={`/admin/rooms/${room.id}`} className="flex-1">
                     <Button variant="secondary" size="sm" className="w-full">
                       <Pencil className="w-3 h-3 mr-1 inline" />
                       Edit
                     </Button>
                   </Link>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    className="flex-1"
+                  <button
                     onClick={() => handleDelete(room.id)}
+                    className="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 flex items-center justify-center transition-colors border border-red-200"
+                    title="Delete room"
                   >
-                    <Trash2 className="w-3 h-3 mr-1 inline" />
-                    Delete
-                  </Button>
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
             </div>

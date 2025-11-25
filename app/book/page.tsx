@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { supabase } from '@/lib/supabase/client';
 
 interface Booking {
   id: string;
@@ -29,6 +30,7 @@ interface Room {
   name: string;
   capacity: number;
   photo_url: string | null;
+  status: 'active' | 'maintenance' | 'disabled';
   location: {
     id: string;
     name: string;
@@ -53,7 +55,33 @@ export default function BookingPage() {
   const [copyToast, setCopyToast] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = 'Book a Room | Good Life Rooms';
     fetchData();
+  }, []);
+
+  // Realtime updates: refresh availability when any booking changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('booking-page-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        (payload) => {
+          console.log('🔄 Booking change detected:', payload);
+          // Refresh room availability when any booking is created, updated, or deleted
+          fetchData();
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to booking updates');
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
@@ -271,8 +299,11 @@ export default function BookingPage() {
               const isAvailable = room.availability.state === 'available';
               const isBusy = room.availability.state === 'busy';
               const isStartingSoon = room.availability.state === 'starting_soon';
+              const isMaintenance = room.status === 'maintenance';
 
-              const statusChipClasses = isAvailable
+              const statusChipClasses = isMaintenance
+                ? 'bg-[#FED7AA] text-[#9A3412]'
+                : isAvailable
                 ? 'bg-[#E6F9EE] text-[#166534]'
                 : isBusy
                 ? 'bg-[#FEE2E2] text-[#991B1B]'
@@ -298,6 +329,20 @@ export default function BookingPage() {
                   )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                   
+                      {/* Maintenance stripe overlay */}
+                      {isMaintenance && (
+                        <div className="absolute inset-0 pointer-events-none">
+                          <svg className="w-full h-full" preserveAspectRatio="none">
+                            <defs>
+                              <pattern id={`maintenance-${room.id}`} patternUnits="userSpaceOnUse" width="40" height="40" patternTransform="rotate(45)">
+                                <line x1="0" y1="0" x2="0" y2="40" stroke="#F97316" strokeWidth="8" opacity="0.3" />
+                              </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill={`url(#maintenance-${room.id})`} />
+                          </svg>
+                        </div>
+                      )}
+
                       {/* Name + status */}
                       <div className="absolute bottom-0 left-0 right-0 p-4 flex flex-col gap-2">
                         <div className="flex items-center justify-between gap-2">
@@ -307,19 +352,22 @@ export default function BookingPage() {
                           <span
                             className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium tablet-shadow ${statusChipClasses}`}
                           >
-                            {isAvailable && (
+                            {isMaintenance ? (
+                              <>
+                                <XCircle className="w-4 h-4" />
+                                <span>Maintenance</span>
+                              </>
+                            ) : isAvailable ? (
                               <>
                                 <CheckCircle className="w-4 h-4" />
                                 <span>Available</span>
                               </>
-                            )}
-                            {isBusy && (
+                            ) : isBusy ? (
                               <>
                                 <XCircle className="w-4 h-4" />
                                 <span>In use</span>
                               </>
-                            )}
-                            {isStartingSoon && (
+                            ) : (
                               <>
                                 <Clock className="w-4 h-4" />
                                 <span>Starting soon</span>
@@ -345,7 +393,7 @@ export default function BookingPage() {
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap gap-2 text-xs">
+                      <div className="flex flex-wrap gap-2 text-xs min-h-[28px]">
                         {room.features?.tv && (
                           <span className="px-3 py-1 rounded-full bg-[#E3F2FF] text-[#2563EB] font-medium">
                             TV

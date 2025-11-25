@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowLeft, MapPin } from 'lucide-react';
 import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
 import { Floor, Room } from '@/lib/types/database.types';
+import { supabase } from '@/lib/supabase/client';
 
 interface Location {
   id: string;
@@ -23,6 +24,7 @@ export default function MapsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    document.title = 'Maps | Good Life Rooms';
     const fetchLocations = async () => {
       try {
         const res = await fetch('/api/admin/locations');
@@ -105,7 +107,24 @@ export default function MapsPage() {
 
     // Poll status every 30s
     const interval = setInterval(fetchRoomsAndStatus, 30000);
-    return () => clearInterval(interval);
+
+    // Realtime updates: refresh when any booking changes
+    const channel = supabase
+      .channel('maps-page-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          // Refresh room statuses when any booking is created, updated, or deleted
+          fetchRoomsAndStatus();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
   }, [selectedLocationId]);
 
   const selectedFloor = floors.find(f => f.id === selectedFloorId);

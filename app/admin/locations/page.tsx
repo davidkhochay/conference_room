@@ -26,6 +26,7 @@ export default function LocationsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
+    document.title = 'Locations | Good Life Rooms';
     fetchLocations();
   }, []);
 

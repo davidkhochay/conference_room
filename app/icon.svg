@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Black triangle (back) -->
+  <polygon points="50,10 95,85 5,85" fill="#000000"/>
+  
+  <!-- Green triangle (front) -->
+  <polygon points="50,35 90,85 10,85" fill="#5BA55D"/>
+</svg>

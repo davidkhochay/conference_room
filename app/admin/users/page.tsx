@@ -4,7 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
 import { Input } from '@/lib/components/ui/Input';
-import { Pencil, Plus, Search, Mail, Building2 } from 'lucide-react';
+import { Pencil, Plus, Search, Building2 } from 'lucide-react';
 import Link from 'next/link';
 
 interface User {
@@ -28,6 +28,7 @@ export default function AdminUsersPage() {
   const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
+    document.title = 'Users | Good Life Rooms';
     fetchUsers(statusFilter);
   }, [statusFilter]);
 
@@ -82,7 +83,7 @@ export default function AdminUsersPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow-sm">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
             <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
             <Link href="/admin">
@@ -94,7 +95,7 @@ export default function AdminUsersPage() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
+      <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-10">
         <div className="mb-8 flex justify-between items-center">
           <div className="flex-1 max-w-md">
             <div className="relative">
@@ -190,9 +191,6 @@ export default function AdminUsersPage() {
                     User
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Company
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -211,12 +209,6 @@ export default function AdminUsersPage() {
                   <tr key={user.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{user.name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <Mail className="w-4 h-4 mr-2 text-gray-400" />
-                        {user.email}
-                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {user.company ? (

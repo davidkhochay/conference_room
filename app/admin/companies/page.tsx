@@ -28,6 +28,7 @@ export default function CompaniesPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    document.title = 'Companies | Good Life Rooms';
     fetchCompanies();
   }, []);
 

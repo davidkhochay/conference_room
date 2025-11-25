@@ -41,6 +41,7 @@ export const CreateRoomSchema = z.object({
   photo_url: z.string().url().optional(),
   features: z.record(z.boolean()).optional(),
   allow_walk_up_booking: z.boolean().default(true),
+  status: z.enum(['active', 'maintenance', 'disabled']).default('active'),
   max_booking_duration_minutes: z.number().int().positive().optional(),
   floor_id: z.string().uuid().optional(),
   map_position: z.object({

@@ -7,13 +7,25 @@ export async function GET(request: NextRequest) {
     const supabase = getServerAdminClient();
     const searchParams = request.nextUrl.searchParams;
     const locationId = searchParams.get('location_id');
-    const status = searchParams.get('status') || 'active';
+    const status = searchParams.get('status');
 
     let query = supabase
       .from('rooms')
       .select('*, location:locations(*)')
-      .eq('status', status)
       .order('name');
+
+    // Handle status filtering:
+    // - status=all: show all rooms (for admin panel)
+    // - status=active/maintenance/disabled: show only that specific status
+    // - no status param: show only active and maintenance (public-facing, hide disabled)
+    if (status === 'all') {
+      // No status filter - show all rooms
+    } else if (status) {
+      query = query.eq('status', status);
+    } else {
+      // Default: show only active and maintenance rooms (not disabled)
+      query = query.in('status', ['active', 'maintenance']);
+    }
 
     if (locationId) {
       query = query.eq('location_id', locationId);

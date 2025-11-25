@@ -22,6 +22,7 @@ interface Room {
   name: string;
   capacity: number;
   photo_url: string | null;
+  status: 'active' | 'maintenance' | 'disabled';
   location: {
     name: string;
     timezone: string;
@@ -708,6 +709,9 @@ export default function RoomBookingPage() {
     );
   }
 
+  const isMaintenance = room.status === 'maintenance';
+  const isDisabled = room.status === 'disabled';
+
   return (
     <div className="min-h-screen bg-[#F7F3EC] overflow-y-auto">
       {/* Header */}
@@ -727,6 +731,34 @@ export default function RoomBookingPage() {
 
       {/* Content */}
       <main className="max-w-5xl mx-auto px-6 pb-16 space-y-8">
+        {/* Maintenance/Disabled Warning */}
+        {(isMaintenance || isDisabled) && (
+          <div className="bg-orange-50 border-2 border-orange-300 rounded-3xl p-6 tablet-shadow">
+            <div className="flex items-start gap-4">
+              <div className="flex-shrink-0">
+                <svg className="w-12 h-12 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-xl font-bold text-orange-900 mb-2">
+                  {isDisabled ? 'Room Unavailable' : 'Under Maintenance'}
+                </h3>
+                <p className="text-orange-800">
+                  {isDisabled 
+                    ? 'This room is currently disabled and cannot be booked.' 
+                    : 'This room is currently under maintenance and cannot be booked at this time. Please check back later or choose another room.'}
+                </p>
+                <Link href={backHref} className="mt-4 inline-block">
+                  <Button className="bg-orange-600 hover:bg-orange-700 text-white">
+                    View Other Rooms
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Room hero */}
         <section className="rounded-3xl bg-white tablet-shadow overflow-hidden">
           <div className="relative h-52 sm:h-64 overflow-hidden">
@@ -740,6 +772,20 @@ export default function RoomBookingPage() {
               <div className="w-full h-full bg-gray-200" />
                 )}
             <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
+            
+            {/* Maintenance stripe overlay */}
+            {isMaintenance && (
+              <div className="absolute inset-0 pointer-events-none">
+                <svg className="w-full h-full" preserveAspectRatio="none">
+                  <defs>
+                    <pattern id="maintenance-pattern" patternUnits="userSpaceOnUse" width="60" height="60" patternTransform="rotate(45)">
+                      <line x1="0" y1="0" x2="0" y2="60" stroke="#F97316" strokeWidth="12" opacity="0.4" />
+                    </pattern>
+                  </defs>
+                  <rect width="100%" height="100%" fill="url(#maintenance-pattern)" />
+                </svg>
+              </div>
+            )}
                 
             <div className="absolute bottom-0 left-0 right-0 p-6 flex flex-col gap-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -779,6 +825,7 @@ export default function RoomBookingPage() {
         </section>
 
         {/* Booking form + calendar */}
+        {!isMaintenance && !isDisabled && (
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Form */}
           <div className="lg:col-span-4">
@@ -1046,6 +1093,7 @@ export default function RoomBookingPage() {
             </Card>
         </div>
         </section>
+        )}
       </main>
     </div>
   );

@@ -23,6 +23,7 @@ export default function TabletRoomSelector() {
   const [deviceType, setDeviceType] = useState<'computer' | 'ipad' | 'tablet10' | 'tablet8'>('ipad');
 
   useEffect(() => {
+    document.title = 'Select Room | Tablet | Good Life Rooms';
     fetchRooms();
   }, []);
 

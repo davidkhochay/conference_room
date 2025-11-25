@@ -5,6 +5,7 @@ import { Card } from '@/lib/components/ui/Card';
 import { MapPin, Users, Clock } from 'lucide-react';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import { supabase } from '@/lib/supabase/client';
 
 interface Booking {
   id: string;
@@ -20,6 +21,7 @@ interface Room {
   name: string;
   capacity: number;
   photo_url: string | null;
+  status: 'active' | 'maintenance' | 'disabled';
   location: {
     id: string;
     name: string;
@@ -44,6 +46,25 @@ export default function PublicBookingPage() {
 
   useEffect(() => {
     fetchData();
+  }, []);
+
+  // Realtime updates: refresh availability when any booking changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('public-booking-page-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          // Refresh room availability when any booking is created, updated, or deleted
+          fetchData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
@@ -218,8 +239,11 @@ export default function PublicBookingPage() {
               const isAvailable = room.availability.state === 'available';
               const isBusy = room.availability.state === 'busy';
               const isStartingSoon = room.availability.state === 'starting_soon';
+              const isMaintenance = room.status === 'maintenance';
 
-              const statusChipClasses = isAvailable
+              const statusChipClasses = isMaintenance
+                ? 'bg-[#FED7AA] text-[#9A3412]'
+                : isAvailable
                 ? 'bg-[#E6F9EE] text-[#166534]'
                 : isBusy
                 ? 'bg-[#FEE2E2] text-[#991B1B]'
@@ -244,9 +268,26 @@ export default function PublicBookingPage() {
                         <div className="w-full h-full bg-gray-200" />
                       )}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-black/0 to-transparent" />
+                      
+                      {/* Maintenance stripe overlay */}
+                      {isMaintenance && (
+                        <div className="absolute inset-0 pointer-events-none">
+                          <svg className="w-full h-full" preserveAspectRatio="none">
+                            <defs>
+                              <pattern id={`maintenance-public-${room.id}`} patternUnits="userSpaceOnUse" width="40" height="40" patternTransform="rotate(45)">
+                                <line x1="0" y1="0" x2="0" y2="40" stroke="#F97316" strokeWidth="8" opacity="0.3" />
+                              </pattern>
+                            </defs>
+                            <rect width="100%" height="100%" fill={`url(#maintenance-public-${room.id})`} />
+                          </svg>
+                        </div>
+                      )}
+
                       <div className="absolute top-3 right-3">
                         <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusChipClasses}`}>
-                          {isAvailable
+                          {isMaintenance
+                            ? 'Maintenance'
+                            : isAvailable
                             ? 'Available'
                             : isBusy
                             ? 'In use'

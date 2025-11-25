@@ -5,6 +5,7 @@ import { Card } from '@/lib/components/ui/Card';
 import { Building2, MapPin, DoorOpen, Users, Calendar, Clock } from 'lucide-react';
 import { bucketBookings, normalizeBookingStatus } from '@/lib/utils/bookingStatus';
 import { BookingDetailsModal } from '@/lib/components/admin/BookingDetailsModal';
+import { supabase } from '@/lib/supabase/client';
 
 interface Booking {
   id: string;
@@ -80,8 +81,28 @@ export default function AdminDashboard() {
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = 'Admin Dashboard | Good Life Rooms';
     fetchStats();
     fetchRecentBookings();
+  }, []);
+
+  // Realtime updates: refresh bookings when any booking changes
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-dashboard-updates')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'bookings' },
+        () => {
+          // Refresh bookings when any booking is created, updated, or deleted
+          fetchRecentBookings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchStats = async () => {

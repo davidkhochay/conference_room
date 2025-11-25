@@ -105,13 +105,17 @@ export default function FloorPlanViewer({
             const pos = room.map_position as any;
             const status = roomStatuses[room.id] || { roomId: room.id, isOccupied: false };
             const isCurrent = currentRoomId === room.id;
+            const isMaintenance = room.status === 'maintenance';
 
             const state = status.uiState ?? (status.isOccupied ? 'busy' : 'free');
 
             let fillColor = '#34CB57'; // free (green)
             let strokeColor = '#15803d';
 
-            if (state === 'busy') {
+            if (isMaintenance) {
+              fillColor = '#FB923C'; // orange for maintenance
+              strokeColor = '#C2410C';
+            } else if (state === 'busy') {
               fillColor = '#EC5353'; // red
               strokeColor = '#b91c1c';
             } else if (state === 'checkin') {
@@ -130,6 +134,7 @@ export default function FloorPlanViewer({
                 onClick={() => onRoomClick?.(room.id)}
                 className={`cursor-pointer transition-all duration-200 ${onRoomClick ? 'hover:opacity-80' : ''}`}
               >
+                {/* Room background */}
                 <rect
                   x={pos.x}
                   y={pos.y}
@@ -141,6 +146,39 @@ export default function FloorPlanViewer({
                   strokeWidth={isCurrent ? '4' : '2'}
                   rx="4"
                 />
+
+                {/* Maintenance stripe pattern overlay */}
+                {isMaintenance && (
+                  <>
+                    <defs>
+                      <pattern 
+                        id={`maintenance-stripe-${room.id}`} 
+                        patternUnits="userSpaceOnUse" 
+                        width="20" 
+                        height="20" 
+                        patternTransform="rotate(45)"
+                      >
+                        <line 
+                          x1="0" 
+                          y1="0" 
+                          x2="0" 
+                          y2="20" 
+                          stroke="#F97316" 
+                          strokeWidth="6" 
+                          opacity="0.5" 
+                        />
+                      </pattern>
+                    </defs>
+                    <rect
+                      x={pos.x}
+                      y={pos.y}
+                      width={pos.width}
+                      height={pos.height}
+                      fill={`url(#maintenance-stripe-${room.id})`}
+                      rx="4"
+                    />
+                  </>
+                )}
 
                 <text
                   x={pos.x + pos.width / 2}
@@ -158,7 +196,9 @@ export default function FloorPlanViewer({
                   cy={pos.y + 10}
                   r="4"
                   fill={
-                    state === 'busy'
+                    isMaintenance
+                      ? '#FB923C'
+                      : state === 'busy'
                       ? '#EC5353'
                       : state === 'checkin'
                       ? '#FFC627'
