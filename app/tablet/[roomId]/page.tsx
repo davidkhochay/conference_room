@@ -34,6 +34,7 @@ interface RoomStatus {
   }>;
   available_until: string | null;
   ui_state?: 'free' | 'checkin' | 'busy';
+  pin_code?: string | null;
 }
 
 import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
