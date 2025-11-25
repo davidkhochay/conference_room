@@ -11,6 +11,10 @@ export async function POST(
     const bookingService = getBookingService();
     await bookingService.endBookingEarly(bookingId);
 
+    // Don't sync from Google immediately after release - Google Calendar needs
+    // time to propagate the deletion, and syncing too early can revert the
+    // local 'ended' status. Let the natural sync cycle handle it.
+
     return NextResponse.json({ success: true, data: null });
   } catch (error: any) {
     return NextResponse.json(

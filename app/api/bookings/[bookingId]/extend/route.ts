@@ -17,6 +17,9 @@ export async function POST(
       validatedData.additional_minutes
     );
 
+    // Don't sync from Google immediately after extension - let the natural
+    // sync cycle handle it to avoid timing conflicts.
+
     return NextResponse.json({ success: true, data: booking });
   } catch (error: any) {
     return NextResponse.json(

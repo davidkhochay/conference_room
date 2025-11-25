@@ -41,6 +41,7 @@ export default function EditRoomPage() {
     capacity: 8,
     photo_url: '',
     status: 'active',
+    pin_code: '',
     allow_walk_up_booking: true,
     features: {
       tv: false,
@@ -73,13 +74,14 @@ export default function EditRoomPage() {
       const result = await response.json();
       
       if (result.success) {
-        const room: Room = result.data;
+        const room: Room & { pin_code?: string | null } = result.data;
         setFormData({
           name: room.name,
           location_id: room.location_id,
           capacity: room.capacity,
           photo_url: room.photo_url || '',
           status: room.status,
+          pin_code: room.pin_code || '',
           allow_walk_up_booking: room.allow_walk_up_booking,
           features: {
             tv: room.features?.tv ?? false,
@@ -103,10 +105,16 @@ export default function EditRoomPage() {
     setError('');
 
     try {
+      // Clean up pin_code: if empty string, send null; if not 4 digits, send null
+      const submitData = {
+        ...formData,
+        pin_code: formData.pin_code && formData.pin_code.length === 4 ? formData.pin_code : null,
+      };
+      
       const response = await fetch(`/api/rooms/${roomId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(submitData),
       });
 
       const result = await response.json();
@@ -272,6 +280,28 @@ export default function EditRoomPage() {
                     <option value="maintenance">Maintenance</option>
                     <option value="disabled">Disabled</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Door PIN Code (4 digits, optional)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="\d{4}"
+                    maxLength={4}
+                    placeholder="e.g., 1234"
+                    value={formData.pin_code}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/[^0-9]/g, '');
+                      setFormData({ ...formData, pin_code: value });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 font-mono text-lg tracking-widest"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    For rooms with physical keypad locks. Shown to checked-in users.
+                  </p>
                 </div>
 
                 <ImageUpload

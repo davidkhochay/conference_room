@@ -228,16 +228,34 @@ export async function syncRoomFromGoogle(
       target = existingByEventId.get(key);
     }
 
-    // When a booking already exists locally, we generally want to preserve any
-    // non-scheduled status that was set by our own flows (check-in, release,
-    // no-show) and only allow Google to override when the event is explicitly
-    // cancelled. This keeps tablets as the source of truth for "in use" and
-    // release behaviour while still respecting Google-side cancellations.
+    // When a booking already exists locally, we MUST preserve lifecycle statuses
+    // that were set by our internal flows (release, check-in, no-show). These
+    // represent explicit user actions and must never be overwritten by Google sync,
+    // even if Google still shows the event (due to propagation delays).
+    //
+    // The local system is the source of truth for booking lifecycle; Google Calendar
+    // is only the source of truth for timing and explicit cancellations.
     let effectiveStatus: Booking['status'] = computedStatus;
     if (target) {
-      if (computedStatus === 'cancelled') {
+      // NEVER overwrite these final/terminal statuses - they represent completed
+      // user actions and must persist even if Google Calendar still shows the event
+      if (target.status === 'ended' || target.status === 'no_show') {
+        effectiveStatus = target.status;
+      }
+      // For cancelled bookings, respect both local and Google cancellations
+      else if (target.status === 'cancelled' || computedStatus === 'cancelled') {
         effectiveStatus = 'cancelled';
-      } else if (target.status !== 'scheduled') {
+      }
+      // For in-progress bookings, only allow Google to cancel, never revert to scheduled
+      else if (target.status === 'in_progress') {
+        effectiveStatus = computedStatus === 'cancelled' ? 'cancelled' : 'in_progress';
+      }
+      // For scheduled bookings, allow Google to update (normal sync behavior)
+      else if (target.status === 'scheduled') {
+        effectiveStatus = computedStatus;
+      }
+      // For any other status, preserve what we have locally
+      else {
         effectiveStatus = target.status;
       }
     }

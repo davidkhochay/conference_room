@@ -42,6 +42,7 @@ export const CreateRoomSchema = z.object({
   features: z.record(z.boolean()).optional(),
   allow_walk_up_booking: z.boolean().default(true),
   status: z.enum(['active', 'maintenance', 'disabled']).default('active'),
+  pin_code: z.string().regex(/^\d{4}$/).optional().nullable(),
   max_booking_duration_minutes: z.number().int().positive().optional(),
   floor_id: z.string().uuid().optional(),
   map_position: z.object({
@@ -90,6 +91,7 @@ export type RoomStatusResponse = {
   }>;
   available_until: string | null; // ISO datetime or null if not currently available
   ui_state: 'free' | 'checkin' | 'busy'; // unified UI state for maps, tablets, and overlays
+  pin_code?: string | null; // 4-digit PIN for door access, only returned when there's a current booking
 };
 
 // Room availability request

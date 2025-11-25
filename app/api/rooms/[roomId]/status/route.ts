@@ -12,12 +12,29 @@ export async function GET(
     const { roomId } = await params;
     const supabase = getServerAdminClient();
 
+    // Check if there are any recently ended or cancelled bookings for this room.
+    // If so, skip the sync to avoid race conditions where Google Calendar hasn't
+    // propagated the deletion yet and would overwrite our local status.
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const { data: recentlyEnded } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('room_id', roomId)
+      .in('status', ['ended', 'cancelled'])
+      .gte('updated_at', twoMinutesAgo)
+      .limit(1);
+
+    const shouldSkipSync = recentlyEnded && recentlyEnded.length > 0;
+
     // Opportunistically refresh bookings for this room from Google Calendar so
     // tablets and maps see Google‑originated meetings as well.
-    try {
-      await syncRoomFromGoogle(roomId);
-    } catch (e) {
-      console.error('Failed to sync room from Google (non-fatal):', e);
+    // Skip if we just ended/cancelled a booking to prevent race conditions.
+    if (!shouldSkipSync) {
+      try {
+        await syncRoomFromGoogle(roomId);
+      } catch (e) {
+        console.error('Failed to sync room from Google (non-fatal):', e);
+      }
     }
 
     // Opportunistically mark any stale bookings for this room as no-shows so
@@ -26,7 +43,7 @@ export async function GET(
     const bookingService = getBookingService();
     await bookingService.markNoShows({ roomId });
 
-    // Get room details
+    // Get room details (including pin_code for checked-in users)
     const { data: room, error: roomError } = await supabase
       .from('rooms')
       .select('*, location:locations(*)')
@@ -154,6 +171,8 @@ export async function GET(
         })) || [],
       available_until: availableUntil,
       ui_state: uiState,
+      // Only include pin_code when there's a current booking (for security)
+      pin_code: currentBooking && room.pin_code ? room.pin_code : null,
     };
 
     return NextResponse.json({ success: true, data: response });

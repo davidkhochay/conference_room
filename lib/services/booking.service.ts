@@ -411,16 +411,21 @@ export class BookingService {
 
     // Update Google Calendar event
     if (booking.google_event_id && booking.google_calendar_id) {
-      await this.googleCalendar.updateEvent(
-        booking.google_calendar_id,
-        booking.google_event_id,
-        {
-          end: {
-            dateTime: newEndTime.toISOString(),
-            timeZone: booking.room.location.timezone,
-          },
-        }
-      );
+      try {
+        await this.googleCalendar.updateEvent(
+          booking.google_calendar_id,
+          booking.google_event_id,
+          {
+            end: {
+              dateTime: newEndTime.toISOString(),
+              timeZone: booking.room.location.timezone,
+            },
+          }
+        );
+      } catch (error) {
+        // Log error but don't fail the extension - the database is already updated
+        console.error('Failed to update Google Calendar event on extension:', error);
+      }
     }
 
     // Log activity
@@ -450,13 +455,24 @@ export class BookingService {
       throw new Error('Cannot cancel a completed or no-show booking');
     }
 
-    // Update booking status
-    await this.supabase
+    // Update booking status in database first and verify it succeeded
+    const { data: updatedBooking, error: updateError } = await this.supabase
       .from('bookings')
       .update({ status: 'cancelled' })
-      .eq('id', bookingId);
+      .eq('id', bookingId)
+      .select()
+      .single();
 
-    // Delete Google Calendar event
+    if (updateError || !updatedBooking) {
+      throw new Error(`Failed to update booking status to cancelled: ${updateError?.message || 'Unknown error'}`);
+    }
+
+    // Verify the status was actually set to 'cancelled' before proceeding
+    if (updatedBooking.status !== 'cancelled') {
+      throw new Error('Booking status was not properly updated to cancelled');
+    }
+
+    // Delete Google Calendar event to immediately free up the room
     if (booking.google_event_id && booking.google_calendar_id) {
       try {
         await this.googleCalendar.deleteEvent(
@@ -464,7 +480,8 @@ export class BookingService {
           booking.google_event_id
         );
       } catch (error) {
-        console.error('Failed to delete calendar event:', error);
+        console.error('Failed to delete calendar event on cancellation:', error);
+        // The database is already updated, so the booking is cancelled even if Google fails
       }
     }
 
@@ -514,9 +531,10 @@ export class BookingService {
    * End a booking early
    */
   async endBookingEarly(bookingId: string, userId?: string): Promise<void> {
+    // Get booking with room details to access timezone
     const { data: booking, error } = await this.supabase
       .from('bookings')
-      .select()
+      .select('*, room:rooms(*, location:locations(*))')
       .eq('id', bookingId)
       .single();
 
@@ -530,27 +548,53 @@ export class BookingService {
 
     const now = new Date();
 
-    // Update booking
-    await this.supabase
+    // Update booking in database first and verify it succeeded
+    const { data: updatedBooking, error: updateError } = await this.supabase
       .from('bookings')
       .update({
         end_time: now.toISOString(),
         status: 'ended',
       })
-      .eq('id', bookingId);
+      .eq('id', bookingId)
+      .select()
+      .single();
 
-    // Update Google Calendar event
+    if (updateError || !updatedBooking) {
+      throw new Error(`Failed to update booking status to ended: ${updateError?.message || 'Unknown error'}`);
+    }
+
+    // Verify the status was actually set to 'ended' before proceeding
+    if (updatedBooking.status !== 'ended') {
+      throw new Error('Booking status was not properly updated to ended');
+    }
+
+    // Update Google Calendar event to free up the room immediately
     if (booking.google_event_id && booking.google_calendar_id) {
-      await this.googleCalendar.updateEvent(
-        booking.google_calendar_id,
-        booking.google_event_id,
-        {
-          end: {
-            dateTime: now.toISOString(),
-            timeZone: 'UTC',
-          },
+      try {
+        const timezone = booking.room?.location?.timezone || 'UTC';
+        await this.googleCalendar.updateEvent(
+          booking.google_calendar_id,
+          booking.google_event_id,
+          {
+            end: {
+              dateTime: now.toISOString(),
+              timeZone: timezone,
+            },
+          }
+        );
+      } catch (error) {
+        // Log error but don't fail the release - the database is already updated
+        console.error('Failed to update Google Calendar event on early release:', error);
+        // Optionally: try to delete the event as a fallback
+        try {
+          await this.googleCalendar.deleteEvent(
+            booking.google_calendar_id,
+            booking.google_event_id
+          );
+        } catch (deleteError) {
+          console.error('Failed to delete Google Calendar event as fallback:', deleteError);
         }
-      );
+      }
     }
 
     await this.logBookingActivity(bookingId, 'ended_early', userId);

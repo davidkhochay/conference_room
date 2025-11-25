@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '@/lib/components/ui/Button';
-import { Calendar, Clock, User, QrCode, Users, X } from 'lucide-react';
+import { Calendar, Clock, User, QrCode, Users, X, Key } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
@@ -155,6 +155,7 @@ export default function TabletDisplay() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPin, setSettingsPin] = useState('');
   const [settingsError, setSettingsError] = useState('');
+  const [showPinModal, setShowPinModal] = useState(false);
   const [hideActions, setHideActions] = useState(false);
   const eventsScrollRef = useRef<HTMLDivElement | null>(null);
   const [allBookings, setAllBookings] = useState<Array<{
@@ -193,7 +194,7 @@ export default function TabletDisplay() {
       const interval = setInterval(() => {
         fetchStatus();
         fetchBookings();
-      }, 30000); // Refresh every 30 seconds
+      }, 10000); // Refresh every 10 seconds for more responsive updates
       return () => clearInterval(interval);
     }
   }, [roomId]);
@@ -483,12 +484,21 @@ export default function TabletDisplay() {
           }
         }
 
-        // Only refresh this tablet's status if we booked for the same room
+        // Close modal first so user sees the update
+        handleCancelBooking();
+        
+        // Immediately refresh this tablet's status if we booked for the same room
         if (!bookingTarget || bookingTarget.roomId === roomId) {
           await fetchStatus();
           await fetchBookings();
+          
+          // Force another refresh after a brief delay to ensure all database
+          // changes have propagated and UI is fully updated
+          setTimeout(async () => {
+            await fetchStatus();
+            await fetchBookings();
+          }, 500);
         }
-        handleCancelBooking();
       } else {
         alert(`Failed to book: ${result.error?.message}`);
       }
@@ -546,6 +556,12 @@ export default function TabletDisplay() {
         setPendingRelease(false);
         await fetchStatus();
         await fetchBookings();
+        
+        // Force another refresh after a brief delay to ensure UI is fully updated
+        setTimeout(async () => {
+          await fetchStatus();
+          await fetchBookings();
+        }, 500);
       }
     } catch (error) {
       console.error('Failed to end meeting:', error);
@@ -586,6 +602,13 @@ export default function TabletDisplay() {
       const result = await response.json();
       if (result.success) {
         await fetchStatus();
+        await fetchBookings();
+        
+        // Force another refresh after a brief delay
+        setTimeout(async () => {
+          await fetchStatus();
+          await fetchBookings();
+        }, 500);
       } else {
         showErrorBanner(result.error?.message || 'Failed to extend booking.');
       }
@@ -639,9 +662,15 @@ export default function TabletDisplay() {
         return;
       }
 
-      // Refresh status and bookings so UI goes to red "in meeting" state
+      // Immediately refresh status and bookings so UI goes to red "in meeting" state
       await fetchStatus();
       await fetchBookings();
+      
+      // Force another refresh after a brief delay to ensure UI is fully updated
+      setTimeout(async () => {
+        await fetchStatus();
+        await fetchBookings();
+      }, 500);
     } catch (error) {
       console.error('Failed to check in:', error);
       alert('Failed to check in');
@@ -1540,6 +1569,17 @@ export default function TabletDisplay() {
           </div>
         </div>
 
+        {/* Floating PIN Button (bottom-right, only when checked in and room has PIN) */}
+        {status?.current_booking && status?.ui_state === 'busy' && status?.pin_code && (
+          <button
+            type="button"
+            onClick={() => setShowPinModal(true)}
+            className={`tablet-shadow w-16 h-16 rounded-full flex items-center justify-center ${getEventCardColor()} text-black absolute bottom-10 right-28`}
+          >
+            <Key className="w-7 h-7" />
+          </button>
+        )}
+
         {/* Floating Settings Button (bottom-right, all states) */}
         <button
           type="button"
@@ -1757,6 +1797,46 @@ export default function TabletDisplay() {
           </div>
         )}
 
+        {/* PIN Code Modal (for checked-in users) */}
+        {showPinModal && status?.pin_code && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
+            <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-md w-full">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center">
+                  <Key className="w-8 h-8 text-blue-600" />
+                </div>
+              </div>
+              
+              <h2 className="text-2xl font-semibold text-gray-900 mb-2 text-center">
+                Door PIN Code
+              </h2>
+              <p className="text-gray-600 text-center mb-2">
+                {status?.room_name}
+              </p>
+              <p className="text-sm text-gray-500 text-center mb-6">
+                Use this code to unlock the room door
+              </p>
+
+              <div className="flex justify-center mb-8">
+                <div className="bg-gray-900 text-white px-8 py-6 rounded-2xl">
+                  <div className="text-6xl font-mono font-bold tracking-[0.5em] text-center">
+                    {status.pin_code}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPinModal(false)}
+                className="w-full h-12 rounded-full bg-gray-900 text-white font-medium hover:bg-black"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Admin Settings Modal */}
         {showSettings && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-8">
             <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-md w-full">
