@@ -246,9 +246,9 @@ export async function syncRoomFromGoogle(
       else if (target.status === 'cancelled' || computedStatus === 'cancelled') {
         effectiveStatus = 'cancelled';
       }
-      // For in-progress bookings, only allow Google to cancel, never revert to scheduled
+      // For in-progress bookings, preserve in-progress (cancelled already handled above)
       else if (target.status === 'in_progress') {
-        effectiveStatus = computedStatus === 'cancelled' ? 'cancelled' : 'in_progress';
+        effectiveStatus = 'in_progress';
       }
       // For scheduled bookings, allow Google to update (normal sync behavior)
       else if (target.status === 'scheduled') {
