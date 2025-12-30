@@ -4,8 +4,11 @@ import { JWT } from 'google-auth-library';
 export class GoogleCalendarService {
   private calendar: calendar_v3.Calendar;
   private auth: JWT;
+  private adminEmail: string;
 
   constructor() {
+    this.adminEmail = process.env.GOOGLE_CALENDAR_ADMIN_EMAIL || '';
+    
     this.auth = new JWT({
       email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
@@ -15,10 +18,17 @@ export class GoogleCalendarService {
         'https://www.googleapis.com/auth/admin.directory.resource.calendar',
         'https://www.googleapis.com/auth/admin.directory.user.readonly',
       ],
-      subject: process.env.GOOGLE_CALENDAR_ADMIN_EMAIL,
+      subject: this.adminEmail,
     });
 
     this.calendar = google.calendar({ version: 'v3', auth: this.auth });
+  }
+
+  /**
+   * Get the admin email used as the organizer for calendar events
+   */
+  getOrganizerEmail(): string {
+    return this.adminEmail;
   }
 
   /**

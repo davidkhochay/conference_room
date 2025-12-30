@@ -78,12 +78,22 @@ export class BookingService {
     }
 
     // Create Google Calendar event (optional - booking works without it)
+    // Events are created on the admin's calendar (organizer) with the room as an attendee.
     try {
-      const calendarId = room.google_calendar_id || room.google_resource_id;
+      const roomCalendarId = room.google_calendar_id || room.google_resource_id;
+      const organizerCalendarId = this.googleCalendar.getOrganizerEmail();
 
-      if (calendarId) {
+      if (organizerCalendarId) {
+        // Build attendees list: room as resource
+        const attendees: Array<{ email: string; resource?: boolean }> = [];
+
+        // Add the room as a resource attendee so it appears on the room's calendar
+        if (roomCalendarId) {
+          attendees.push({ email: roomCalendarId, resource: true });
+        }
+
         const event = await this.googleCalendar.createEvent(
-          calendarId,
+          organizerCalendarId,
           {
             summary: 'Walk-up Booking',
             description: `Quick booking from ${room.name}`,
@@ -95,10 +105,7 @@ export class BookingService {
               dateTime: endTime.toISOString(),
               timeZone: room.location.timezone,
             },
-            attendees:
-              room.google_calendar_id
-                ? [{ email: room.google_calendar_id, resource: true }]
-                : [],
+            attendees,
           },
           {
             glc_booking_id: booking.id,
@@ -110,7 +117,7 @@ export class BookingService {
           .from('bookings')
           .update({
             google_event_id: event.id,
-            google_calendar_id: calendarId,
+            google_calendar_id: organizerCalendarId,
           })
           .eq('id', booking.id);
       }
@@ -300,20 +307,38 @@ export class BookingService {
     }
 
     // Create Google Calendar event (optional - booking works without it)
+    // Events are created on the admin's calendar (organizer) with the room and
+    // attendees added. This ensures proper calendar invites are sent to all attendees.
     try {
-      const calendarId = room.google_calendar_id || room.google_resource_id;
+      const roomCalendarId = room.google_calendar_id || room.google_resource_id;
+      const organizerCalendarId = this.googleCalendar.getOrganizerEmail();
 
-      if (calendarId) {
-        const attendees: Array<{ email: string; resource?: boolean }> = [
-          ...(request.attendee_emails || []).map(email => ({ email })),
-        ];
+      if (organizerCalendarId) {
+        // Build attendees list: host + other attendees + room as resource
+        const attendees: Array<{ email: string; resource?: boolean }> = [];
 
-        if (room.google_calendar_id) {
-          attendees.push({ email: room.google_calendar_id, resource: true });
+        // Always add the host as an attendee if they have an email
+        if (host?.email) {
+          attendees.push({ email: host.email });
+        }
+
+        // Add other attendees from the request
+        if (request.attendee_emails) {
+          for (const email of request.attendee_emails) {
+            // Avoid duplicates (host might already be in the list)
+            if (!attendees.some(a => a.email === email)) {
+              attendees.push({ email });
+            }
+          }
+        }
+
+        // Add the room as a resource attendee so it appears on the room's calendar
+        if (roomCalendarId) {
+          attendees.push({ email: roomCalendarId, resource: true });
         }
 
         const event = await this.googleCalendar.createEvent(
-          calendarId,
+          organizerCalendarId,
           {
             summary: request.title || 'Conference Room Booking',
             description:
@@ -336,12 +361,12 @@ export class BookingService {
           }
         );
 
-        // Update booking with event ID
+        // Update booking with event ID and calendar IDs
         await this.supabase
           .from('bookings')
           .update({
             google_event_id: event.id,
-            google_calendar_id: calendarId,
+            google_calendar_id: organizerCalendarId,
           })
           .eq('id', booking.id);
       }
