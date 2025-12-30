@@ -1088,6 +1088,7 @@ export default function RoomBookingPage() {
                 roomId={roomId}
                 roomName={room.name}
                 embedded
+                initialDate={booking.date}
                 onSlotSelect={handleSlotSelect}
               />
             </Card>

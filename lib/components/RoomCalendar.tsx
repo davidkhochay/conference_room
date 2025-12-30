@@ -31,15 +31,27 @@ interface RoomCalendarProps {
   roomId: string;
   roomName: string;
   embedded?: boolean;
+  initialDate?: string; // yyyy-MM-dd format from parent
   onSlotSelect?: (slot: { date: string; startTime: string; durationMinutes?: number }) => void;
 }
 
-export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect }: RoomCalendarProps) {
+export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, onSlotSelect }: RoomCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Sync selectedDate with parent's initialDate prop
+  useEffect(() => {
+    if (initialDate) {
+      // Parse yyyy-MM-dd as local date (not UTC)
+      const [year, month, day] = initialDate.split('-').map(Number);
+      const newDate = new Date(year, month - 1, day);
+      setSelectedDate(newDate);
+      setCurrentMonth(newDate);
+    }
+  }, [initialDate]);
 
   useEffect(() => {
     fetchBookings();
