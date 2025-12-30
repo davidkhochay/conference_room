@@ -117,8 +117,14 @@ export function RoomCalendar({ roomId, roomName, embedded = false, onSlotSelect 
 
   const getBookingsForDate = (date: Date) => {
     return bookings.filter(booking => {
+      // Parse the ISO string and compare in local timezone
       const bookingDate = new Date(booking.start_time);
-      return isSameDay(bookingDate, date);
+      // Compare year, month, and day in local timezone to avoid UTC offset issues
+      return (
+        bookingDate.getFullYear() === date.getFullYear() &&
+        bookingDate.getMonth() === date.getMonth() &&
+        bookingDate.getDate() === date.getDate()
+      );
     });
   };
 
