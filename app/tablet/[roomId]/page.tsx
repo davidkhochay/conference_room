@@ -25,6 +25,7 @@ interface RoomStatus {
     organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    source?: string | null;
     external_source?: string | null;
   } | null;
   next_bookings: Array<{
@@ -34,6 +35,7 @@ interface RoomStatus {
     organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    source?: string | null;
     external_source?: string | null;
   }>;
   available_until: string | null;
@@ -200,6 +202,7 @@ export default function TabletDisplay() {
     start_time: string;
     end_time: string;
     attendee_count: number;
+    source?: string | null;
     external_source?: string | null;
   }>>([]);
   const [justReleased, setJustReleased] = useState(false);
@@ -372,6 +375,7 @@ export default function TabletDisplay() {
             start_time: b.start_time,
             end_time: b.end_time,
             attendee_count: 1 + (Array.isArray(b.attendee_emails) ? b.attendee_emails.length : 0),
+            source: b.source || null,
             external_source: b.external_source || null,
           }));
         setAllBookings(bookings);
@@ -1092,8 +1096,24 @@ export default function TabletDisplay() {
     }
   };
 
+  // Helper to determine if a booking truly came from Google Calendar UI
+  // (not created via our tablet/web app). We check both external_source AND source
+  // as a defense-in-depth measure against sync timing issues.
+  const isFromGoogleCalendar = (booking: {
+    source?: string | null;
+    external_source?: string | null;
+  } | null): boolean => {
+    if (!booking) return false;
+    // Must have external_source='google_ui' AND source='google_calendar' to show badge
+    // This ensures tablet/web bookings never show the Google badge even if sync has issues
+    return (
+      booking.external_source === 'google_ui' &&
+      booking.source === 'google_calendar'
+    );
+  };
+
   const getStatusText = () => {
-    // When we just released a meeting, force a clean \"Available\" state
+    // When we just released a meeting, force a clean "Available" state
     if (justReleased) {
       return {
         title: 'Available',
@@ -1108,14 +1128,14 @@ export default function TabletDisplay() {
         title: status.current_booking.title,
         subtitle: `${formatTime(status.current_booking.start_time)} - ${formatTime(status.current_booking.end_time)}`,
         host: status.current_booking.host_name || status.current_booking.organizer_email || null,
-        isGoogleCalendar: status.current_booking.external_source === 'google_ui',
+        isGoogleCalendar: isFromGoogleCalendar(status.current_booking),
       };
     } else if (showCheckIn && nextBooking) {
       return {
         title: nextBooking.title,
         subtitle: `${formatTime(nextBooking.start_time)} - ${formatTime(nextBooking.end_time)}`,
         host: nextBooking.host_name || nextBooking.organizer_email || null,
-        isGoogleCalendar: nextBooking.external_source === 'google_ui',
+        isGoogleCalendar: isFromGoogleCalendar(nextBooking),
       };
     } else if (status.available_until) {
       const now = new Date();
@@ -1507,7 +1527,7 @@ export default function TabletDisplay() {
                       </div>
                       <div className="text-gray-900 text-2xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
                         {booking.title}{' '}
-                        {booking.external_source === 'google_ui' && <GCalBadge />}
+                        {isFromGoogleCalendar(booking) && <GCalBadge />}
                         {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
                       </div>
                       {isTapEnabled && (
@@ -1767,7 +1787,7 @@ export default function TabletDisplay() {
                         </div>
                         <div className="text-gray-900 text-3xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
                           {booking.title}{' '}
-                          {booking.external_source === 'google_ui' && <GCalBadge />}
+                          {isFromGoogleCalendar(booking) && <GCalBadge />}
                           {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
                         </div>
                         {isTapEnabled && (

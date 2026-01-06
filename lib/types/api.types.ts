@@ -95,6 +95,7 @@ export type RoomStatusResponse = {
     organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    source?: string | null;
     external_source?: string | null;
   } | null;
   next_bookings: Array<{
@@ -104,6 +105,7 @@ export type RoomStatusResponse = {
     organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    source?: string | null;
     external_source?: string | null;
   }>;
   available_until: string | null; // ISO datetime or null if not currently available

@@ -192,6 +192,7 @@ export async function GET(
             organizer_email: currentBooking.organizer_email || null,
             start_time: currentBooking.start_time,
             end_time: currentBooking.end_time,
+            source: currentBooking.source || null,
             external_source: currentBooking.external_source || null,
           }
         : null,
@@ -203,6 +204,7 @@ export async function GET(
           organizer_email: b.organizer_email || null,
           start_time: b.start_time,
           end_time: b.end_time,
+          source: b.source || null,
           external_source: b.external_source || null,
         })) || [],
       available_until: availableUntil,

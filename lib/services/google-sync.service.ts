@@ -301,23 +301,60 @@ export async function syncRoomFromGoogle(
   let changed = 0;
 
   if (inserts.length) {
+    // Before upserting, check if any of these google_event_ids already exist in the database.
+    // This handles the case where a booking was created by our app but wasn't found in the
+    // initial lookup (timing issues, different query window, etc.). We must preserve the
+    // original source and external_source to avoid incorrectly marking tablet/web bookings
+    // as coming from Google Calendar.
+    const eventIds = inserts
+      .map((b) => b.google_event_id)
+      .filter((id): id is string => !!id);
+
+    let existingByEventIdForInserts: Record<string, { source: string; external_source: string | null }> = {};
+    
+    if (eventIds.length > 0) {
+      const { data: existingForInserts } = await supabase
+        .from('bookings')
+        .select('google_event_id, source, external_source')
+        .in('google_event_id', eventIds);
+      
+      if (existingForInserts) {
+        existingByEventIdForInserts = Object.fromEntries(
+          existingForInserts.map((b) => [
+            b.google_event_id,
+            { source: b.source, external_source: b.external_source },
+          ])
+        );
+      }
+    }
+
     const { error: insertError } = await supabase.from('bookings').upsert(
-      inserts.map((b) => ({
-        // Required fields
-        room_id: b.room_id,
-        title: b.title,
-        description: b.description,
-        start_time: b.start_time,
-        end_time: b.end_time,
-        google_event_id: b.google_event_id,
-        google_calendar_id: b.google_calendar_id,
-        source: b.source,
-        status: b.status,
-        attendee_emails: b.attendee_emails || [],
-        organizer_email: b.organizer_email,
-        external_source: b.external_source,
-        last_synced_at: b.last_synced_at,
-      })),
+      inserts.map((b) => {
+        // Check if this booking already exists (will be an update due to google_event_id conflict)
+        const existingRecord = b.google_event_id
+          ? existingByEventIdForInserts[b.google_event_id]
+          : null;
+        
+        return {
+          // Required fields
+          room_id: b.room_id,
+          title: b.title,
+          description: b.description,
+          start_time: b.start_time,
+          end_time: b.end_time,
+          google_event_id: b.google_event_id,
+          google_calendar_id: b.google_calendar_id,
+          // Preserve source if this is actually an update (booking exists with this google_event_id)
+          source: existingRecord ? existingRecord.source : b.source,
+          status: b.status,
+          attendee_emails: b.attendee_emails || [],
+          organizer_email: b.organizer_email,
+          // CRITICAL: Preserve external_source if booking already exists to avoid
+          // incorrectly marking tablet/web bookings as Google Calendar bookings
+          external_source: existingRecord ? existingRecord.external_source : b.external_source,
+          last_synced_at: b.last_synced_at,
+        };
+      }),
       { onConflict: 'google_event_id', ignoreDuplicates: false }
     );
 
