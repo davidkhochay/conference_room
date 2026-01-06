@@ -22,19 +22,38 @@ interface RoomStatus {
     id: string;
     title: string;
     host_name: string | null;
+    organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    external_source?: string | null;
   } | null;
   next_bookings: Array<{
     id: string;
     title: string;
     host_name: string | null;
+    organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    external_source?: string | null;
   }>;
   available_until: string | null;
   ui_state?: 'free' | 'checkin' | 'busy';
   pin_code?: string | null;
+}
+
+// GCal Badge component for bookings imported from Google Calendar
+function GCalBadge({ className = '' }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-[#4285F4] text-white ${className}`}
+    >
+      <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-15A2.5 2.5 0 0 1 4.5 2H9v2H4.5a.5.5 0 0 0-.5.5v15a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5V15h2v4.5a2.5 2.5 0 0 1-2.5 2.5z"/>
+        <path d="M8 10h2v8H8zM14 6h2v12h-2z"/>
+      </svg>
+      GCal
+    </span>
+  );
 }
 
 import FloorPlanViewer from '@/lib/components/FloorPlanViewer';
@@ -163,9 +182,11 @@ export default function TabletDisplay() {
     id: string;
     title: string;
     host_name: string | null;
+    organizer_email?: string | null;
     start_time: string;
     end_time: string;
     attendee_count: number;
+    external_source?: string | null;
   }>>([]);
   const [justReleased, setJustReleased] = useState(false);
   const [pendingRelease, setPendingRelease] = useState(false);
@@ -189,14 +210,27 @@ export default function TabletDisplay() {
 
   useEffect(() => {
     if (roomId) {
-      fetchStatus();
+      // Force sync from Google Calendar on initial load
+      fetchStatus(true);
       fetchUsers();
-      fetchBookings();
-      const interval = setInterval(() => {
+      fetchBookings(true);
+      
+      // Regular polling every 10 seconds (uses normal sync with TTL)
+      const regularInterval = setInterval(() => {
         fetchStatus();
         fetchBookings();
-      }, 10000); // Refresh every 10 seconds for more responsive updates
-      return () => clearInterval(interval);
+      }, 10000);
+      
+      // Force sync from Google every 30 seconds to catch external bookings
+      const forceSyncInterval = setInterval(() => {
+        fetchStatus(true);
+        fetchBookings(true);
+      }, 30000);
+      
+      return () => {
+        clearInterval(regularInterval);
+        clearInterval(forceSyncInterval);
+      };
     }
   }, [roomId]);
 
@@ -273,9 +307,12 @@ export default function TabletDisplay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.current_booking?.end_time, currentTime, justReleased, pendingRelease]);
 
-  const fetchStatus = async () => {
+  const fetchStatus = async (forceSync = false) => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}/status`);
+      const url = forceSync 
+        ? `/api/rooms/${roomId}/status?force_sync=true` 
+        : `/api/rooms/${roomId}/status`;
+      const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
         setStatus(result.data);
@@ -299,7 +336,7 @@ export default function TabletDisplay() {
     }
   };
 
-  const fetchBookings = async () => {
+  const fetchBookings = async (forceSync = false) => {
     try {
       // Fetch bookings for the next 30 days
       const startDate = new Date();
@@ -307,9 +344,8 @@ export default function TabletDisplay() {
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + 30);
 
-      const response = await fetch(
-        `/api/bookings?room_id=${roomId}&start_date=${startDate.toISOString()}&end_date=${endDate.toISOString()}`
-      );
+      const url = `/api/bookings?room_id=${roomId}&start_date=${startDate.toISOString()}&end_date=${endDate.toISOString()}${forceSync ? '&force_sync=true' : ''}`;
+      const response = await fetch(url);
       const result = await response.json();
       if (result.success) {
         const bookings = result.data
@@ -318,9 +354,11 @@ export default function TabletDisplay() {
             id: b.id,
             title: b.title,
             host_name: b.host?.name || null,
+            organizer_email: b.organizer_email || null,
             start_time: b.start_time,
             end_time: b.end_time,
             attendee_count: 1 + (Array.isArray(b.attendee_emails) ? b.attendee_emails.length : 0),
+            external_source: b.external_source || null,
           }));
         setAllBookings(bookings);
       }
@@ -973,6 +1011,7 @@ export default function TabletDisplay() {
         title: 'Available',
         subtitle: null,
         host: null,
+        isGoogleCalendar: false,
       };
     }
 
@@ -980,13 +1019,15 @@ export default function TabletDisplay() {
       return {
         title: status.current_booking.title,
         subtitle: `${formatTime(status.current_booking.start_time)} - ${formatTime(status.current_booking.end_time)}`,
-        host: status.current_booking.host_name
+        host: status.current_booking.host_name || status.current_booking.organizer_email || null,
+        isGoogleCalendar: status.current_booking.external_source === 'google_ui',
       };
     } else if (showCheckIn && nextBooking) {
       return {
         title: nextBooking.title,
         subtitle: `${formatTime(nextBooking.start_time)} - ${formatTime(nextBooking.end_time)}`,
-        host: nextBooking.host_name
+        host: nextBooking.host_name || nextBooking.organizer_email || null,
+        isGoogleCalendar: nextBooking.external_source === 'google_ui',
       };
     } else if (status.available_until) {
       const now = new Date();
@@ -1020,6 +1061,7 @@ export default function TabletDisplay() {
             title: `Available for ${readable}`,
             subtitle: null,
             host: null,
+            isGoogleCalendar: false,
           };
         }
       }
@@ -1029,12 +1071,14 @@ export default function TabletDisplay() {
         title: 'Available',
         subtitle: null,
         host: null,
+        isGoogleCalendar: false,
       };
     } else {
       return {
         title: 'Available',
         subtitle: null,
-        host: null
+        host: null,
+        isGoogleCalendar: false,
       };
     }
   };
@@ -1235,8 +1279,9 @@ export default function TabletDisplay() {
                     <h2 className="text-3xl font-semibold text-white">
                       {statusInfo.subtitle}
                     </h2>
-                    <h3 className="text-4xl font-semibold text-white mt-1">
+                    <h3 className="text-4xl font-semibold text-white mt-1 flex items-center gap-2 flex-wrap">
                       {statusInfo.title}
+                      {statusInfo.isGoogleCalendar && <GCalBadge />}
                     </h3>
                     {statusInfo.host && (
                       <p className="text-xl text-white mt-1">
@@ -1251,8 +1296,9 @@ export default function TabletDisplay() {
                         {statusInfo.subtitle}
                       </h2>
                     )}
-                    <h3 className="text-4xl font-semibold text-black mt-1">
+                    <h3 className="text-4xl font-semibold text-black mt-1 flex items-center gap-2 flex-wrap">
                       {statusInfo.title}
+                      {statusInfo.isGoogleCalendar && <GCalBadge />}
                     </h3>
                     {statusInfo.host && (
                       <p className="text-xl text-black mt-1">
@@ -1371,9 +1417,10 @@ export default function TabletDisplay() {
                         <Users className="w-5 h-5" />
                         <span>{booking.attendee_count}</span>
                       </div>
-                      <div className="text-gray-900 text-2xl font-bold tablet-btn">
+                      <div className="text-gray-900 text-2xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
                         {booking.title}{' '}
-                        {booking.host_name && <>by {booking.host_name}</>}
+                        {booking.external_source === 'google_ui' && <GCalBadge />}
+                        {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
                       </div>
                       {isTapEnabled && (
                         <div className="mt-1 text-sm text-gray-900/80 tablet-btn">
@@ -1426,8 +1473,9 @@ export default function TabletDisplay() {
                         <h2 className="text-3xl font-semibold text-white">
                           {statusInfo.subtitle}
                         </h2>
-                        <h3 className="text-4xl font-semibold text-white mt-1">
+                        <h3 className="text-4xl font-semibold text-white mt-1 flex items-center gap-2 flex-wrap">
                           {statusInfo.title}
+                          {statusInfo.isGoogleCalendar && <GCalBadge />}
                         </h3>
                         {statusInfo.host && (
                           <p className="text-xl text-white mt-1">
@@ -1442,8 +1490,9 @@ export default function TabletDisplay() {
                             {statusInfo.subtitle}
                           </h2>
                         )}
-                        <h3 className="text-4xl font-semibold text-black mt-1">
+                        <h3 className="text-4xl font-semibold text-black mt-1 flex items-center gap-2 flex-wrap">
                           {statusInfo.title}
+                          {statusInfo.isGoogleCalendar && <GCalBadge />}
                         </h3>
                         {statusInfo.host && (
                           <p className="text-xl text-black mt-1">
@@ -1478,9 +1527,10 @@ export default function TabletDisplay() {
                       <h2
                         className={`${
                           isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'
-                        } font-semibold ${getTextColor()} mb-4`}
+                        } font-semibold ${getTextColor()} mb-4 flex items-center justify-center gap-3 flex-wrap`}
                       >
                         {statusInfo.subtitle} - {statusInfo.title}
+                        {statusInfo.isGoogleCalendar && <GCalBadge />}
                       </h2>
                       {statusInfo.host && (
                         <p
@@ -1497,9 +1547,10 @@ export default function TabletDisplay() {
                       <h2
                         className={`${
                           isComputer ? 'text-4xl' : isAmazon ? 'text-5xl' : 'text-6xl'
-                        } font-semibold text-black mb-4`}
+                        } font-semibold text-black mb-4 flex items-center justify-center gap-3 flex-wrap`}
                       >
                         {statusInfo.subtitle} - {statusInfo.title}
+                        {statusInfo.isGoogleCalendar && <GCalBadge />}
                       </h2>
                       {statusInfo.host && (
                         <p
@@ -1626,9 +1677,10 @@ export default function TabletDisplay() {
                           <Users className="w-6 h-6" />
                           <span>{booking.attendee_count}</span>
                         </div>
-                        <div className="text-gray-900 text-3xl font-bold tablet-btn">
+                        <div className="text-gray-900 text-3xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
                           {booking.title}{' '}
-                          {booking.host_name && <>by {booking.host_name}</>}
+                          {booking.external_source === 'google_ui' && <GCalBadge />}
+                          {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
                         </div>
                         {isTapEnabled && (
                           <div className="mt-1 text-base text-gray-900/80 tablet-btn">

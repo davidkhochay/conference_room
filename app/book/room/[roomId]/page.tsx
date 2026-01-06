@@ -552,9 +552,9 @@ export default function RoomBookingPage() {
 
       const endDateTime = new Date(startDateTime.getTime() + booking.duration * 60 * 1000);
 
-      // Fetch existing bookings for this time period
+      // Fetch existing bookings for this time period (force sync from Google to get latest)
       const response = await fetch(
-        `/api/bookings?room_id=${roomId}&start_date=${startDateTime.toISOString()}&end_date=${endDateTime.toISOString()}`
+        `/api/bookings?room_id=${roomId}&start_date=${startDateTime.toISOString()}&end_date=${endDateTime.toISOString()}&force_sync=true`
       );
       
       const result = await response.json();

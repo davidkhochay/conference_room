@@ -7,7 +7,7 @@ const googleCalendar = getGoogleCalendarService();
 
 // Simple in-memory guard so we don't hammer Google on every request.
 const roomSyncTimestamps = new Map<string, number>();
-const SYNC_TTL_MS = 60_000; // 1 minute
+const SYNC_TTL_MS = 15_000; // 15 seconds - reduced for better responsiveness to Google Calendar changes
 
 type SyncOptions = {
   /**
@@ -20,6 +20,11 @@ type SyncOptions = {
    * Defaults to 30 days into the future.
    */
   windowFutureDays?: number;
+  /**
+   * Force sync even if TTL hasn't expired.
+   * Use sparingly to avoid rate limiting from Google.
+   */
+  force?: boolean;
 };
 
 type EventLike = {
@@ -122,7 +127,8 @@ export async function syncRoomFromGoogle(
   const nowMs = Date.now();
   const lastSync = roomSyncTimestamps.get(roomId);
 
-  if (lastSync && nowMs - lastSync < SYNC_TTL_MS) {
+  // Skip sync if TTL hasn't expired, unless force is set
+  if (!options?.force && lastSync && nowMs - lastSync < SYNC_TTL_MS) {
     return { synced: 0 };
   }
 
@@ -260,6 +266,10 @@ export async function syncRoomFromGoogle(
       }
     }
 
+    // For existing bookings (updates), preserve original source and external_source
+    // Only mark as 'google_calendar' source and 'google_ui' external_source for truly NEW events
+    const isNewEvent = !target;
+    
     const baseFields: Partial<Booking> = {
       room_id: roomId,
       title: raw.summary || 'Conference Room Booking',
@@ -268,11 +278,13 @@ export async function syncRoomFromGoogle(
       end_time: endIso,
       google_event_id: raw.id || null,
       google_calendar_id: calendarId,
-      source: 'api',
+      // Preserve source for existing bookings, use 'google_calendar' for new imports
+      source: target ? target.source : 'google_calendar',
       status: effectiveStatus,
       attendee_emails: attendeeEmails,
       organizer_email: organizerEmail,
-      external_source: privateId ? null : 'google_ui',
+      // Preserve external_source for existing bookings; for new events, check privateId
+      external_source: target ? target.external_source : (privateId ? null : 'google_ui'),
       last_synced_at: now.toISOString(),
     };
 
@@ -289,7 +301,7 @@ export async function syncRoomFromGoogle(
   let changed = 0;
 
   if (inserts.length) {
-    const { error: insertError } = await supabase.from('bookings').insert(
+    const { error: insertError } = await supabase.from('bookings').upsert(
       inserts.map((b) => ({
         // Required fields
         room_id: b.room_id,
@@ -305,12 +317,13 @@ export async function syncRoomFromGoogle(
         organizer_email: b.organizer_email,
         external_source: b.external_source,
         last_synced_at: b.last_synced_at,
-      }))
+      })),
+      { onConflict: 'google_event_id', ignoreDuplicates: false }
     );
 
     if (insertError) {
       throw new Error(
-        `Failed to insert Google-synced bookings: ${insertError.message}`
+        `Failed to upsert Google-synced bookings: ${insertError.message}`
       );
     }
     changed += inserts.length;

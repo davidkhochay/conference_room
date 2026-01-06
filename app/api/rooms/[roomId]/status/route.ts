@@ -10,6 +10,8 @@ export async function GET(
 ) {
   try {
     const { roomId } = await params;
+    const searchParams = request.nextUrl.searchParams;
+    const forceSync = searchParams.get('force_sync') === 'true';
     const supabase = getServerAdminClient();
 
     // Check if there are any recently ended or cancelled bookings for this room.
@@ -31,7 +33,7 @@ export async function GET(
     // Skip if we just ended/cancelled a booking to prevent race conditions.
     if (!shouldSkipSync) {
       try {
-        await syncRoomFromGoogle(roomId);
+        await syncRoomFromGoogle(roomId, { force: forceSync });
       } catch (e) {
         console.error('Failed to sync room from Google (non-fatal):', e);
       }
@@ -141,6 +143,36 @@ export async function GET(
       }
     }
 
+    // Look up user names by organizer_email for bookings without a host
+    const allBookings = [currentBooking, ...upcomingBookings].filter(Boolean);
+    const organizerEmails = allBookings
+      .filter((b) => !b.host?.name && b.organizer_email)
+      .map((b) => b.organizer_email as string);
+    
+    const emailToName: Record<string, string> = {};
+    if (organizerEmails.length > 0) {
+      const { data: users } = await supabase
+        .from('users')
+        .select('email, name')
+        .in('email', organizerEmails);
+      
+      if (users) {
+        for (const user of users) {
+          emailToName[user.email] = user.name;
+        }
+      }
+    }
+
+    // Helper to resolve the display name for a booking
+    const getHostName = (booking: typeof currentBooking) => {
+      if (!booking) return null;
+      if (booking.host?.name) return booking.host.name;
+      if (booking.organizer_email && emailToName[booking.organizer_email]) {
+        return emailToName[booking.organizer_email];
+      }
+      return null;
+    };
+
     const response: RoomStatusResponse = {
       room_id: room.id,
       room_name: room.name,
@@ -156,18 +188,22 @@ export async function GET(
         ? {
             id: currentBooking.id,
             title: currentBooking.title,
-            host_name: currentBooking.host?.name || null,
+            host_name: getHostName(currentBooking),
+            organizer_email: currentBooking.organizer_email || null,
             start_time: currentBooking.start_time,
             end_time: currentBooking.end_time,
+            external_source: currentBooking.external_source || null,
           }
         : null,
       next_bookings:
         upcomingBookings?.map((b) => ({
           id: b.id,
           title: b.title,
-          host_name: b.host?.name || null,
+          host_name: getHostName(b),
+          organizer_email: b.organizer_email || null,
           start_time: b.start_time,
           end_time: b.end_time,
+          external_source: b.external_source || null,
         })) || [],
       available_until: availableUntil,
       ui_state: uiState,

@@ -22,6 +22,7 @@ interface Booking {
   google_event_id?: string | null;
   google_calendar_id?: string | null;
   external_source?: string | null;
+  organizer_email?: string | null;
   is_recurring?: boolean;
   recurring_parent_id?: string | null;
   host?: {
@@ -325,10 +326,10 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
                       Recurring
                     </div>
                   )}
-                  {booking.host && (
+                  {(booking.host || booking.organizer_email) && (
                     <div className="mt-0.5 flex items-center text-[11px] text-gray-600">
                       <User className="w-3 h-3 mr-1" />
-                      <span>{booking.host.name}</span>
+                      <span>{booking.host?.name || booking.organizer_email}</span>
                     </div>
                   )}
           </div>

@@ -49,6 +49,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('user_id');
     const startDate = searchParams.get('start_date');
     const endDate = searchParams.get('end_date');
+    const forceSync = searchParams.get('force_sync') === 'true';
 
     const { getServerAdminClient } = await import('@/lib/supabase/server');
     const supabase = getServerAdminClient();
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
       // Refresh this room's bookings from Google so calendars and tablets show
       // up-to-date events including meetings created directly in Google.
       try {
-        await syncRoomFromGoogle(roomId);
+        await syncRoomFromGoogle(roomId, { force: forceSync });
       } catch (e: any) {
         console.error('Failed to sync room from Google (non-fatal)', {
           roomId,
@@ -99,13 +100,46 @@ export async function GET(request: NextRequest) {
       query = query.lte('start_time', endDate);
     }
 
-    const { data, error } = await query.limit(100);
+    // Allow custom limit via query param, default to 100, use 0 for no limit
+    const limitParam = searchParams.get('limit');
+    const limit = limitParam === '0' ? null : (parseInt(limitParam || '100', 10) || 100);
+    
+    const { data, error } = limit ? await query.limit(limit) : await query;
 
     if (error) {
       return NextResponse.json(
         { success: false, error: { error: 'DATABASE_ERROR', message: error.message } },
         { status: 500 }
       );
+    }
+
+    // For bookings without a host, try to look up the user by organizer_email
+    // to populate host information (useful for GCal-synced events)
+    if (data && data.length > 0) {
+      const organizerEmails = data
+        .filter((b: any) => !b.host && b.organizer_email)
+        .map((b: any) => b.organizer_email as string);
+      
+      if (organizerEmails.length > 0) {
+        const { data: users } = await supabase
+          .from('users')
+          .select('email, name')
+          .in('email', organizerEmails);
+        
+        if (users && users.length > 0) {
+          const emailToUser: Record<string, { name: string }> = {};
+          for (const user of users) {
+            emailToUser[user.email] = { name: user.name };
+          }
+          
+          // Populate host for bookings that don't have one but have a matching organizer_email
+          for (const booking of data) {
+            if (!booking.host && booking.organizer_email && emailToUser[booking.organizer_email]) {
+              booking.host = emailToUser[booking.organizer_email];
+            }
+          }
+        }
+      }
     }
 
     return NextResponse.json({ success: true, data });

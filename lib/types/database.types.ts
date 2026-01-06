@@ -145,7 +145,7 @@ export type Booking = {
   end_time: string;
   google_event_id: string | null;
   google_calendar_id: string | null;
-  source: 'tablet' | 'web' | 'api' | 'admin';
+  source: 'tablet' | 'web' | 'api' | 'admin' | 'google_calendar';
   status: 'scheduled' | 'in_progress' | 'ended' | 'cancelled' | 'no_show';
   check_in_time: string | null;
   extended_count: number;

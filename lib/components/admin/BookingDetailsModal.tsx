@@ -28,6 +28,8 @@ interface BookingDetails {
   attendee_emails: string[];
   created_at: string;
   source: string;
+  external_source?: string | null;
+  organizer_email?: string | null;
   room: {
     name: string;
     location: {
@@ -35,6 +37,11 @@ interface BookingDetails {
     };
   };
   host: {
+    name: string;
+    email: string;
+  } | null;
+  // Organizer looked up from users table by organizer_email
+  organizer: {
     name: string;
     email: string;
   } | null;
@@ -220,13 +227,24 @@ export function BookingDetailsModal({ bookingId, onClose }: BookingDetailsModalP
               <div>
                 <h4 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-3 flex items-center">
                   <User className="w-4 h-4 mr-2" />
-                  Host
+                  Host / Organizer
                 </h4>
                 <Card className="bg-blue-50 border-blue-200">
                   {booking.host ? (
                     <div>
                       <p className="font-medium text-gray-900">{booking.host.name}</p>
                       <p className="text-sm text-gray-600">{booking.host.email}</p>
+                    </div>
+                  ) : booking.organizer ? (
+                    <div>
+                      <p className="font-medium text-gray-900">{booking.organizer.name}</p>
+                      <p className="text-sm text-gray-600">{booking.organizer.email}</p>
+                      <p className="text-xs text-gray-500 mt-1">Organizer from Google Calendar</p>
+                    </div>
+                  ) : booking.organizer_email ? (
+                    <div>
+                      <p className="font-medium text-gray-900">{booking.organizer_email}</p>
+                      <p className="text-xs text-gray-500 mt-1">Organizer from Google Calendar</p>
                     </div>
                   ) : (
                     <p className="text-sm text-gray-600">No host assigned (walk-up booking)</p>
@@ -288,8 +306,27 @@ export function BookingDetailsModal({ bookingId, onClose }: BookingDetailsModalP
                     </div>
                     <div className="flex justify-between items-start">
                       <span className="text-sm text-gray-600">Source:</span>
-                      <span className="text-sm font-medium text-gray-900 capitalize">{booking.source}</span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {booking.source === 'google_calendar' ? 'Google Calendar' 
+                          : booking.source === 'tablet' ? 'Tablet'
+                          : booking.source === 'web' ? 'Web'
+                          : booking.source === 'admin' ? 'Admin'
+                          : booking.source === 'api' ? 'API'
+                          : booking.source}
+                      </span>
                     </div>
+                    {booking.external_source === 'google_ui' && (
+                      <div className="flex justify-between items-start">
+                        <span className="text-sm text-gray-600">Origin:</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
+                          <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-15A2.5 2.5 0 0 1 4.5 2H9v2H4.5a.5.5 0 0 0-.5.5v15a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5V15h2v4.5a2.5 2.5 0 0 1-2.5 2.5z"/>
+                            <path d="M8 10h2v8H8zM14 6h2v12h-2z"/>
+                          </svg>
+                          From Google Calendar
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between items-start">
                       <span className="text-sm text-gray-600">Check-in Time:</span>
                       <span className="text-sm font-medium text-gray-900 text-right">

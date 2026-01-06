@@ -92,15 +92,19 @@ export type RoomStatusResponse = {
     id: string;
     title: string;
     host_name: string | null;
+    organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    external_source?: string | null;
   } | null;
   next_bookings: Array<{
     id: string;
     title: string;
     host_name: string | null;
+    organizer_email?: string | null;
     start_time: string;
     end_time: string;
+    external_source?: string | null;
   }>;
   available_until: string | null; // ISO datetime or null if not currently available
   ui_state: 'free' | 'checkin' | 'busy'; // unified UI state for maps, tablets, and overlays

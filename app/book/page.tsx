@@ -56,7 +56,8 @@ export default function BookingPage() {
 
   useEffect(() => {
     document.title = 'Book a Room | Good Life Rooms';
-    fetchData();
+    // Force sync from Google Calendar on initial load to get latest bookings
+    fetchData(true);
   }, []);
 
   // Realtime updates: refresh availability when any booking changes
@@ -84,16 +85,16 @@ export default function BookingPage() {
     };
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (forceSync = false) => {
     try {
       const roomsRes = await fetch('/api/rooms');
       const roomsData = await roomsRes.json();
 
       if (roomsData.success) {
-        // Fetch availability for each room
+        // Fetch availability for each room (force sync from Google on initial load)
         const roomsWithAvailability = await Promise.all(
           roomsData.data.map(async (room: Room) => {
-            const availability = await checkRoomAvailability(room.id);
+            const availability = await checkRoomAvailability(room.id, forceSync);
             return { ...room, availability };
           })
         );
@@ -106,9 +107,12 @@ export default function BookingPage() {
     }
   };
 
-  const checkRoomAvailability = async (roomId: string) => {
+  const checkRoomAvailability = async (roomId: string, forceSync = false) => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}/status`);
+      const url = forceSync 
+        ? `/api/rooms/${roomId}/status?force_sync=true` 
+        : `/api/rooms/${roomId}/status`;
+      const response = await fetch(url);
       const result = await response.json();
 
       if (response.ok && result.success && result.data) {

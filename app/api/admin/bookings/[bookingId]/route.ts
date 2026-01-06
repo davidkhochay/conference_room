@@ -45,10 +45,25 @@ export async function GET(
       // Continue without activity log rather than failing
     }
 
+    // If no host but we have organizer_email, look up the user by email
+    let organizer: { name: string; email: string } | null = null;
+    if (!booking.host && booking.organizer_email) {
+      const { data: organizerUser } = await supabase
+        .from('users')
+        .select('name, email')
+        .eq('email', booking.organizer_email)
+        .single();
+      
+      if (organizerUser) {
+        organizer = organizerUser;
+      }
+    }
+
     // Combine the data
     const response = {
       ...booking,
       activity_log: activityLog || [],
+      organizer, // Will be null if no match found or if host exists
     };
 
     return NextResponse.json({ success: true, data: response });
