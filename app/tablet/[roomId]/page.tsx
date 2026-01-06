@@ -530,12 +530,38 @@ export default function TabletDisplay() {
         const bookingId: string | undefined = result.data?.id;
 
         // For bookings created on THIS room's tablet, auto check-in so the room
-        // immediately goes to \"in use\" (red) with no extra tap needed.
+        // immediately goes to "in use" (red) with no extra tap needed.
+        let checkedIn = false;
         if ((!bookingTarget || bookingTarget.roomId === roomId) && bookingId) {
           try {
-            await fetch(`/api/bookings/${bookingId}/checkin`, {
+            const checkinResponse = await fetch(`/api/bookings/${bookingId}/checkin`, {
               method: 'POST',
             });
+            if (checkinResponse.ok) {
+              checkedIn = true;
+              // Force immediate red state by updating local status before refresh
+              // This prevents the yellow flash while waiting for server response
+              setStatus((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      is_occupied: true,
+                      ui_state: 'busy',
+                      current_booking: {
+                        id: bookingId,
+                        title,
+                        host_name: host?.name || null,
+                        organizer_email: host?.email || null,
+                        start_time: now.toISOString(),
+                        end_time: endTime.toISOString(),
+                        external_source: null, // Tablet booking, not from Google
+                      },
+                    }
+                  : prev
+              );
+            } else {
+              console.error('Check-in failed with status:', checkinResponse.status);
+            }
           } catch (err) {
             console.error('Failed to auto check-in booking from tablet:', err);
           }
@@ -581,7 +607,14 @@ export default function TabletDisplay() {
     }
   };
 
+  const [releaseInProgress, setReleaseInProgress] = useState(false);
+
   const endMeeting = async () => {
+    // Prevent multiple rapid clicks
+    if (releaseInProgress) {
+      return;
+    }
+
     if (!status?.current_booking) {
       // No current booking to end - might be in check-in window, try to cancel the upcoming booking
       if (status?.next_bookings && status.next_bookings.length > 0) {
@@ -592,15 +625,33 @@ export default function TabletDisplay() {
         
         // Only allow releasing upcoming booking if it's within ±10 min (check-in window)
         if (diffMinutes >= -10 && diffMinutes <= 10) {
-          // Cancel the upcoming booking instead
+          setReleaseInProgress(true);
+          
+          // Immediately show green state before waiting for server
+          setJustReleased(true);
+          setPendingRelease(false);
+          setStatus((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  is_occupied: false,
+                  ui_state: 'free',
+                  current_booking: null,
+                  next_bookings: prev.next_bookings.filter((b) => b.id !== nextBooking.id),
+                  available_until: prev.next_bookings.length > 1 
+                    ? prev.next_bookings[1].start_time 
+                    : null,
+                }
+              : prev
+          );
+
+          // Cancel the upcoming booking
           try {
             const response = await fetch(`/api/bookings/${nextBooking.id}/cancel`, {
               method: 'POST',
             });
             
             if (response.ok) {
-              setJustReleased(true);
-              setPendingRelease(false);
               await fetchStatus();
               await fetchBookings();
               if (showMap) {
@@ -614,14 +665,19 @@ export default function TabletDisplay() {
                 }
               }, 500);
             } else {
+              // Revert optimistic update on failure
               const result = await response.json();
               showErrorBanner(result.error?.message || 'Failed to release room');
-              setPendingRelease(false);
+              setJustReleased(false);
+              await fetchStatus(); // Re-fetch to restore correct state
             }
           } catch (error) {
             console.error('Failed to cancel upcoming booking:', error);
             showErrorBanner('Failed to release room');
-            setPendingRelease(false);
+            setJustReleased(false);
+            await fetchStatus(); // Re-fetch to restore correct state
+          } finally {
+            setReleaseInProgress(false);
           }
           return;
         }
@@ -644,6 +700,22 @@ export default function TabletDisplay() {
       return;
     }
 
+    setReleaseInProgress(true);
+
+    // Immediately show green state before waiting for server
+    setJustReleased(true);
+    setPendingRelease(false);
+    setStatus((prev) =>
+      prev
+        ? {
+            ...prev,
+            is_occupied: false,
+            ui_state: 'free',
+            current_booking: null,
+          }
+        : prev
+    );
+
     try {
       const response = await fetch(
         `/api/bookings/${status.current_booking.id}/end`,
@@ -653,9 +725,6 @@ export default function TabletDisplay() {
       );
 
       if (response.ok) {
-        // Mark as just released so we immediately show green even before next poll
-        setJustReleased(true);
-        setPendingRelease(false);
         await fetchStatus();
         await fetchBookings();
         // Also refresh floor map if it's open
@@ -672,15 +741,20 @@ export default function TabletDisplay() {
           }
         }, 500);
       } else {
+        // Revert optimistic update on failure
         const result = await response.json();
         console.error('Failed to end meeting:', result);
         showErrorBanner(result.error?.message || 'Failed to release room');
-        setPendingRelease(false);
+        setJustReleased(false);
+        await fetchStatus(); // Re-fetch to restore correct state
       }
     } catch (error) {
       console.error('Failed to end meeting:', error);
       showErrorBanner('Failed to release room');
-      setPendingRelease(false);
+      setJustReleased(false);
+      await fetchStatus(); // Re-fetch to restore correct state
+    } finally {
+      setReleaseInProgress(false);
     }
   };
 
