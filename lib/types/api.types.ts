@@ -2,6 +2,15 @@
 
 import { z } from 'zod';
 
+// Recurrence rule schema
+export const RecurrenceRuleSchema = z.object({
+  type: z.enum(['weekly', 'monthly']),
+  daysOfWeek: z.array(z.number().min(0).max(6)).optional(), // 0=Sunday, 6=Saturday
+  dayOfMonth: z.number().min(1).max(31).optional(),
+});
+
+export type RecurrenceRuleRequest = z.infer<typeof RecurrenceRuleSchema>;
+
 // Booking request schemas
 export const CreateBookingSchema = z.object({
   room_id: z.string().uuid(),
@@ -12,6 +21,10 @@ export const CreateBookingSchema = z.object({
   end_time: z.string().datetime(),
   source: z.enum(['tablet', 'web', 'api', 'admin']),
   attendee_emails: z.array(z.string().email()).optional(),
+  // Recurrence fields (optional)
+  is_recurring: z.boolean().optional(),
+  recurrence_rule: RecurrenceRuleSchema.optional(),
+  recurrence_end_date: z.string().datetime().optional(),
 });
 
 export type CreateBookingRequest = z.infer<typeof CreateBookingSchema>;

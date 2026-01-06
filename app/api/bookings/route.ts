@@ -9,6 +9,28 @@ export async function POST(request: NextRequest) {
     const validatedData = CreateBookingSchema.parse(body);
 
     const bookingService = getBookingService();
+
+    // Check if this is a recurring booking request
+    if (validatedData.is_recurring && validatedData.recurrence_rule && validatedData.recurrence_end_date) {
+      // Create recurring booking
+      const result = await bookingService.createRecurringBooking({
+        ...validatedData,
+        is_recurring: true,
+        recurrence_rule: validatedData.recurrence_rule,
+        recurrence_end_date: validatedData.recurrence_end_date,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          parent: result.parent,
+          occurrences: result.occurrences,
+          total_occurrences: result.occurrences.length + 1,
+        },
+      }, { status: 201 });
+    }
+
+    // Create regular single booking
     const booking = await bookingService.createBooking(validatedData);
 
     return NextResponse.json({ success: true, data: booking }, { status: 201 });

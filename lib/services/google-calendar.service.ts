@@ -32,6 +32,79 @@ export class GoogleCalendarService {
   }
 
   /**
+   * Create a new calendar client impersonating a specific user.
+   * This allows creating events where that user is the organizer.
+   */
+  private createClientForUser(userEmail: string): calendar_v3.Calendar {
+    const userAuth = new JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      scopes: [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events',
+      ],
+      subject: userEmail,
+    });
+
+    return google.calendar({ version: 'v3', auth: userAuth });
+  }
+
+  /**
+   * Create a calendar event as a specific user (they become the organizer).
+   * The event is created on the user's primary calendar.
+   * Falls back to admin if impersonation fails.
+   */
+  async createEventAsUser(
+    organizerEmail: string,
+    eventData: {
+      summary: string;
+      description?: string;
+      start: { dateTime: string; timeZone: string };
+      end: { dateTime: string; timeZone: string };
+      attendees?: Array<{ email: string; resource?: boolean }>;
+      conferenceData?: any;
+    },
+    privateExtendedProps?: Record<string, string>
+  ): Promise<{ event: calendar_v3.Schema$Event; organizerUsed: string }> {
+    // Try to create event as the specified user
+    try {
+      const userCalendar = this.createClientForUser(organizerEmail);
+      
+      const response = await userCalendar.events.insert({
+        calendarId: 'primary', // User's primary calendar
+        requestBody: {
+          ...eventData,
+          extendedProperties: privateExtendedProps
+            ? { private: privateExtendedProps }
+            : undefined,
+        },
+        sendUpdates: 'all',
+      });
+
+      return { event: response.data, organizerUsed: organizerEmail };
+    } catch (error: any) {
+      console.error(`Failed to create event as ${organizerEmail}, falling back to admin`, {
+        message: error?.message,
+        code: error?.code,
+      });
+
+      // Fall back to admin email
+      const response = await this.calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: {
+          ...eventData,
+          extendedProperties: privateExtendedProps
+            ? { private: privateExtendedProps }
+            : undefined,
+        },
+        sendUpdates: 'all',
+      });
+
+      return { event: response.data, organizerUsed: this.adminEmail };
+    }
+  }
+
+  /**
    * Check free/busy status for rooms
    */
   async checkFreeBusy(
@@ -62,6 +135,7 @@ export class GoogleCalendarService {
       end: { dateTime: string; timeZone: string };
       attendees?: Array<{ email: string; resource?: boolean }>;
       conferenceData?: any;
+      recurrence?: string[]; // RRULE strings for recurring events
     },
     privateExtendedProps?: Record<string, string>
   ): Promise<calendar_v3.Schema$Event> {
@@ -79,6 +153,87 @@ export class GoogleCalendarService {
     });
 
     return response.data;
+  }
+
+  /**
+   * Create a recurring calendar event
+   * Returns the parent event which Google will expand into occurrences
+   */
+  async createRecurringEvent(
+    calendarId: string,
+    eventData: {
+      summary: string;
+      description?: string;
+      start: { dateTime: string; timeZone: string };
+      end: { dateTime: string; timeZone: string };
+      attendees?: Array<{ email: string; resource?: boolean }>;
+      recurrence: string[]; // RRULE strings, e.g., ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR;UNTIL=20260401T000000Z"]
+    },
+    privateExtendedProps?: Record<string, string>
+  ): Promise<calendar_v3.Schema$Event> {
+    const response = await this.calendar.events.insert({
+      calendarId,
+      requestBody: {
+        ...eventData,
+        extendedProperties: privateExtendedProps
+          ? { private: privateExtendedProps }
+          : undefined,
+      },
+      sendUpdates: 'all',
+    });
+
+    return response.data;
+  }
+
+  /**
+   * Create a recurring event as a specific user (they become the organizer)
+   */
+  async createRecurringEventAsUser(
+    organizerEmail: string,
+    eventData: {
+      summary: string;
+      description?: string;
+      start: { dateTime: string; timeZone: string };
+      end: { dateTime: string; timeZone: string };
+      attendees?: Array<{ email: string; resource?: boolean }>;
+      recurrence: string[];
+    },
+    privateExtendedProps?: Record<string, string>
+  ): Promise<{ event: calendar_v3.Schema$Event; organizerUsed: string }> {
+    try {
+      const userCalendar = this.createClientForUser(organizerEmail);
+      
+      const response = await userCalendar.events.insert({
+        calendarId: 'primary',
+        requestBody: {
+          ...eventData,
+          extendedProperties: privateExtendedProps
+            ? { private: privateExtendedProps }
+            : undefined,
+        },
+        sendUpdates: 'all',
+      });
+
+      return { event: response.data, organizerUsed: organizerEmail };
+    } catch (error: any) {
+      console.error(`Failed to create recurring event as ${organizerEmail}, falling back to admin`, {
+        message: error?.message,
+        code: error?.code,
+      });
+
+      const response = await this.calendar.events.insert({
+        calendarId: 'primary',
+        requestBody: {
+          ...eventData,
+          extendedProperties: privateExtendedProps
+            ? { private: privateExtendedProps }
+            : undefined,
+        },
+        sendUpdates: 'all',
+      });
+
+      return { event: response.data, organizerUsed: this.adminEmail };
+    }
   }
 
   /**

@@ -10,7 +10,7 @@ import {
   startOfMonth,
   endOfMonth,
 } from "date-fns";
-import { ChevronLeft, ChevronRight, Clock, User, Trash2, Calendar } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, User, Trash2, Calendar, Repeat } from "lucide-react";
 import { normalizeBookingStatus } from "@/lib/utils/bookingStatus";
 
 interface Booking {
@@ -22,6 +22,8 @@ interface Booking {
   google_event_id?: string | null;
   google_calendar_id?: string | null;
   external_source?: string | null;
+  is_recurring?: boolean;
+  recurring_parent_id?: string | null;
   host?: {
     name: string;
   };
@@ -78,7 +80,12 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
     }
   };
 
-  const handleDeleteBooking = async (bookingId: string) => {
+  const handleDeleteBooking = async (bookingId: string, isRecurring: boolean) => {
+    if (isRecurring) {
+      alert('Recurring meetings can only be cancelled by an administrator.\n\nPlease contact your admin or go to Admin > Recurring to manage this series.');
+      return;
+    }
+    
     if (!confirm('Are you sure you want to cancel this booking?')) {
       return;
     }
@@ -92,7 +99,12 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
       if (response.ok) {
         await fetchBookings();
       } else {
-        alert('Failed to cancel booking');
+        const result = await response.json();
+        if (result.error?.error === 'RECURRING_PROTECTED') {
+          alert('Recurring meetings can only be cancelled by an administrator.');
+        } else {
+          alert(result.error?.message || 'Failed to cancel booking');
+        }
       }
     } catch (error) {
       console.error('Failed to cancel booking:', error);
@@ -281,6 +293,7 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
             }
 
             const isGoogleImported = booking.external_source === 'google_ui';
+            const isRecurringBooking = booking.is_recurring || !!booking.recurring_parent_id;
             const canCancelInApp =
               !isGoogleImported &&
               (booking.status === 'scheduled' ||
@@ -306,6 +319,12 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
                       From Google Calendar
                     </div>
                   )}
+                  {isRecurringBooking && (
+                    <div className="mt-0.5 flex items-center text-[10px] uppercase tracking-wide text-purple-600">
+                      <Repeat className="w-3 h-3 mr-1" />
+                      Recurring
+                    </div>
+                  )}
                   {booking.host && (
                     <div className="mt-0.5 flex items-center text-[11px] text-gray-600">
                       <User className="w-3 h-3 mr-1" />
@@ -321,10 +340,14 @@ export function RoomCalendar({ roomId, roomName, embedded = false, initialDate, 
                         </span>
                   {canCancelInApp && (
                           <button
-                            onClick={() => handleDeleteBooking(booking.id)}
+                            onClick={() => handleDeleteBooking(booking.id, isRecurringBooking)}
                             disabled={deleting === booking.id}
-                      className="p-1 text-red-600 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
-                            title="Cancel booking"
+                      className={`p-1 rounded-md transition-colors disabled:opacity-50 ${
+                        isRecurringBooking 
+                          ? 'text-gray-400 hover:bg-gray-50 cursor-not-allowed' 
+                          : 'text-red-600 hover:bg-red-50'
+                      }`}
+                            title={isRecurringBooking ? "Admin only - recurring meeting" : "Cancel booking"}
                           >
                       <Trash2 className="w-3 h-3" />
                           </button>

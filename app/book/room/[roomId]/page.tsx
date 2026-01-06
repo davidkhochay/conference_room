@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Repeat,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
@@ -40,7 +41,13 @@ interface DatePickerFieldProps {
 }
 
 function DatePickerField({ label, value, onChange }: DatePickerFieldProps) {
-  const parsed = value ? new Date(value) : new Date();
+  // Parse yyyy-MM-dd as LOCAL date (not UTC) to avoid off-by-one-day bug
+  const parseLocalDate = (dateStr: string): Date => {
+    const [year, month, day] = dateStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const parsed = value ? parseLocalDate(value) : new Date();
   const [open, setOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(
     new Date(parsed.getFullYear(), parsed.getMonth(), 1)
@@ -75,7 +82,7 @@ function DatePickerField({ label, value, onChange }: DatePickerFieldProps) {
     year: 'numeric',
   });
 
-  const selectedDate = value ? new Date(value) : null;
+  const selectedDate = value ? parseLocalDate(value) : null;
   const today = new Date();
 
   const isSameDay = (a: Date, b: Date) =>
@@ -440,6 +447,13 @@ export default function RoomBookingPage() {
 
   const initial = getRoundedNowTime();
 
+  // Calculate default end date (3 months from now)
+  const getDefaultEndDate = () => {
+    const d = new Date();
+    d.setMonth(d.getMonth() + 3);
+    return d.toISOString().split('T')[0];
+  };
+
   const [booking, setBooking] = useState({
     title: '',
     date: initial.date,
@@ -447,6 +461,14 @@ export default function RoomBookingPage() {
     duration: 60,
     attendees: '',
   });
+  
+  // Recurrence state
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceType, setRecurrenceType] = useState<'weekly' | 'monthly'>('weekly');
+  const [selectedDays, setSelectedDays] = useState<number[]>([new Date().getDay()]); // Default to current day
+  const [dayOfMonth, setDayOfMonth] = useState<number>(new Date().getDate());
+  const [recurrenceEndDate, setRecurrenceEndDate] = useState(getDefaultEndDate());
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -622,18 +644,35 @@ export default function RoomBookingPage() {
       const selectedEmails = selectedAttendees.map(u => u.email);
       const allEmails = [...new Set([...manualEmails, ...(hostEmail ? [hostEmail] : []), ...selectedEmails])]; // Remove duplicates
 
+      // Build request body
+      const requestBody: Record<string, unknown> = {
+        room_id: roomId,
+        host_user_id: hostUserId ?? undefined,
+        title: booking.title || 'Conference Room Booking',
+        start_time: startDateTime.toISOString(),
+        end_time: endDateTime.toISOString(),
+        source: 'web',
+        attendee_emails: allEmails,
+      };
+
+      // Add recurrence fields if recurring
+      if (isRecurring) {
+        requestBody.is_recurring = true;
+        requestBody.recurrence_rule = {
+          type: recurrenceType,
+          ...(recurrenceType === 'weekly' ? { daysOfWeek: selectedDays } : {}),
+          ...(recurrenceType === 'monthly' ? { dayOfMonth } : {}),
+        };
+        // Convert end date to ISO datetime (end of day)
+        const endDateObj = new Date(recurrenceEndDate);
+        endDateObj.setHours(23, 59, 59, 999);
+        requestBody.recurrence_end_date = endDateObj.toISOString();
+      }
+
       const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          room_id: roomId,
-          host_user_id: hostUserId ?? undefined,
-          title: booking.title || 'Conference Room Booking',
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(),
-          source: 'web',
-          attendee_emails: allEmails,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const result = await response.json();
@@ -1035,6 +1074,134 @@ export default function RoomBookingPage() {
                     />
                   </div>
 
+                  {/* Recurrence Section */}
+                  <div className="border-t border-gray-200 pt-4 mt-2">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Repeat className="w-4 h-4 text-gray-500" />
+                        <span className="text-sm font-medium text-gray-900">Repeat</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsRecurring(!isRecurring)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          isRecurring ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            isRecurring ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {isRecurring && (
+                      <div className="space-y-4 bg-blue-50 rounded-xl p-4">
+                        {/* Recurrence Type */}
+                        <div>
+                          <label className="block text-xs font-medium text-gray-700 mb-2">
+                            Frequency
+                          </label>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setRecurrenceType('weekly')}
+                              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                recurrenceType === 'weekly'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              Weekly
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRecurrenceType('monthly')}
+                              className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                recurrenceType === 'monthly'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                              }`}
+                            >
+                              Monthly
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Weekly: Day Selection */}
+                        {recurrenceType === 'weekly' && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-2">
+                              Repeat on
+                            </label>
+                            <div className="flex gap-1">
+                              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                                <button
+                                  key={index}
+                                  type="button"
+                                  onClick={() => {
+                                    if (selectedDays.includes(index)) {
+                                      // Don't allow deselecting all days
+                                      if (selectedDays.length > 1) {
+                                        setSelectedDays(selectedDays.filter(d => d !== index));
+                                      }
+                                    } else {
+                                      setSelectedDays([...selectedDays, index]);
+                                    }
+                                  }}
+                                  className={`w-9 h-9 rounded-full text-xs font-medium transition-colors ${
+                                    selectedDays.includes(index)
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-white text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {day}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Monthly: Day of Month Selection */}
+                        {recurrenceType === 'monthly' && (
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-2">
+                              Day of month
+                            </label>
+                            <select
+                              value={dayOfMonth}
+                              onChange={(e) => setDayOfMonth(parseInt(e.target.value))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                              {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                                <option key={day} value={day}>
+                                  {day === 1 ? '1st' : day === 2 ? '2nd' : day === 3 ? '3rd' : `${day}th`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {/* End Date */}
+                        <div>
+                          <DatePickerField
+                            label="Repeat until"
+                            value={recurrenceEndDate}
+                            onChange={setRecurrenceEndDate}
+                          />
+                        </div>
+
+                        {/* Info message */}
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <p className="text-xs text-amber-800">
+                            <strong>Note:</strong> Recurring meetings can only be modified or cancelled by an administrator.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   {checkingAvailability && (
                     <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-lg text-xs">
                       Checking availability…
@@ -1065,10 +1232,13 @@ export default function RoomBookingPage() {
                     disabled={
                       submitting ||
                       checkingAvailability ||
-                      availabilityMessage?.type === 'error'
+                      (availabilityMessage?.type === 'error' && !isRecurring)
                     }
                   >
-                    {submitting ? 'Creating booking…' : 'Book this room'}
+                    {submitting 
+                      ? (isRecurring ? 'Creating recurring booking…' : 'Creating booking…')
+                      : (isRecurring ? 'Create recurring meeting' : 'Book this room')
+                    }
                   </Button>
                 </form>
               )}

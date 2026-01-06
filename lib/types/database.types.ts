@@ -123,6 +123,18 @@ export type Room = {
   updated_at: string;
 };
 
+/**
+ * Recurrence rule for recurring bookings.
+ * - type: 'weekly' or 'monthly'
+ * - daysOfWeek: For weekly, array of day numbers (0=Sunday, 1=Monday, etc.)
+ * - dayOfMonth: For monthly, which day of the month (1-31)
+ */
+export type RecurrenceRule = {
+  type: 'weekly' | 'monthly';
+  daysOfWeek?: number[]; // 0-6, for weekly recurrence
+  dayOfMonth?: number;   // 1-31, for monthly recurrence
+};
+
 export type Booking = {
   id: string;
   room_id: string;
@@ -145,6 +157,13 @@ export type Booking = {
   external_source?: string | null;
   organizer_email?: string | null;
   last_synced_at?: string | null;
+  /**
+   * Recurring booking fields
+   */
+  is_recurring: boolean;
+  recurrence_rule?: RecurrenceRule | null;
+  recurrence_end_date?: string | null;
+  recurring_parent_id?: string | null;
   created_at: string;
   updated_at: string;
 };

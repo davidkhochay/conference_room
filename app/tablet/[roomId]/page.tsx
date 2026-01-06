@@ -212,6 +212,10 @@ export default function TabletDisplay() {
         () => {
           fetchStatus();
           fetchBookings();
+          // Also refresh floor map statuses if the map is open
+          if (showMap) {
+            fetchFloorData();
+          }
         }
       )
       .subscribe();
@@ -220,7 +224,7 @@ export default function TabletDisplay() {
       supabase.removeChannel(channel);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId]);
+  }, [roomId, showMap]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -526,7 +530,52 @@ export default function TabletDisplay() {
   };
 
   const endMeeting = async () => {
-    if (!status?.current_booking) return;
+    if (!status?.current_booking) {
+      // No current booking to end - might be in check-in window, try to cancel the upcoming booking
+      if (status?.next_bookings && status.next_bookings.length > 0) {
+        const nextBooking = status.next_bookings[0];
+        const now = new Date();
+        const nextStart = new Date(nextBooking.start_time);
+        const diffMinutes = (nextStart.getTime() - now.getTime()) / (1000 * 60);
+        
+        // Only allow releasing upcoming booking if it's within ±10 min (check-in window)
+        if (diffMinutes >= -10 && diffMinutes <= 10) {
+          // Cancel the upcoming booking instead
+          try {
+            const response = await fetch(`/api/bookings/${nextBooking.id}/cancel`, {
+              method: 'POST',
+            });
+            
+            if (response.ok) {
+              setJustReleased(true);
+              setPendingRelease(false);
+              await fetchStatus();
+              await fetchBookings();
+              if (showMap) {
+                await fetchFloorData();
+              }
+              setTimeout(async () => {
+                await fetchStatus();
+                await fetchBookings();
+                if (showMap) {
+                  await fetchFloorData();
+                }
+              }, 500);
+            } else {
+              const result = await response.json();
+              showErrorBanner(result.error?.message || 'Failed to release room');
+              setPendingRelease(false);
+            }
+          } catch (error) {
+            console.error('Failed to cancel upcoming booking:', error);
+            showErrorBanner('Failed to release room');
+            setPendingRelease(false);
+          }
+          return;
+        }
+      }
+      return;
+    }
 
     const now = new Date();
     const end = new Date(status.current_booking.end_time);
@@ -557,15 +606,28 @@ export default function TabletDisplay() {
         setPendingRelease(false);
         await fetchStatus();
         await fetchBookings();
+        // Also refresh floor map if it's open
+        if (showMap) {
+          await fetchFloorData();
+        }
         
         // Force another refresh after a brief delay to ensure UI is fully updated
         setTimeout(async () => {
           await fetchStatus();
           await fetchBookings();
+          if (showMap) {
+            await fetchFloorData();
+          }
         }, 500);
+      } else {
+        const result = await response.json();
+        console.error('Failed to end meeting:', result);
+        showErrorBanner(result.error?.message || 'Failed to release room');
+        setPendingRelease(false);
       }
     } catch (error) {
       console.error('Failed to end meeting:', error);
+      showErrorBanner('Failed to release room');
       setPendingRelease(false);
     }
   };
@@ -1238,12 +1300,20 @@ export default function TabletDisplay() {
 
                 {/* Yellow: check-in for upcoming event */}
                 {showCheckIn && !status.is_occupied && nextBooking && (
-                  <button
-                    onClick={() => handleCheckIn(nextBooking.id)}
-                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
-                  >
-                    Check in
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleCheckIn(nextBooking.id)}
+                      className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
+                    >
+                      Check in
+                    </button>
+                    <button
+                      onClick={endMeeting}
+                      className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-yellow-400/40 hover:bg-yellow-400/60 text-gray-900 rounded-full transition-all backdrop-blur-sm"
+                    >
+                      {pendingRelease ? 'Confirm Release' : 'Release Room'}
+                    </button>
+                  </>
                 )}
 
                 {/* Red: in meeting – release / extend */}
@@ -1474,12 +1544,20 @@ export default function TabletDisplay() {
 
               {/* Yellow: check-in for upcoming event */}
               {showCheckIn && !status.is_occupied && nextBooking && (
-                <button
-                  onClick={() => handleCheckIn(nextBooking.id)}
-                  className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
-                >
-                  Check in
-                </button>
+                <>
+                  <button
+                    onClick={() => handleCheckIn(nextBooking.id)}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
+                  >
+                    Check in
+                  </button>
+                  <button
+                    onClick={endMeeting}
+                    className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-14 bg-yellow-400/40 hover:bg-yellow-400/60 text-gray-900 rounded-full transition-all backdrop-blur-sm"
+                  >
+                    {pendingRelease ? 'Confirm Release' : 'Release Room'}
+                  </button>
+                </>
               )}
 
               {/* Red: in meeting – release / extend */}
