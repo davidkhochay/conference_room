@@ -391,15 +391,16 @@ export default function AdminAnalyticsPage() {
                       [key]: !prev[key],
                     }))
                   }
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-medium transition-all ${
                     active
-                      ? 'bg-gray-900 text-white border-gray-900'
-                      : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      ? 'text-white border-transparent'
+                      : 'bg-white border-gray-300 text-gray-500 hover:border-gray-400'
                   }`}
+                  style={active ? { backgroundColor: meta.color } : undefined}
                 >
                   <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: meta.color }}
+                    className={`w-2 h-2 rounded-full ${active ? 'bg-white/80' : ''}`}
+                    style={!active ? { backgroundColor: meta.color } : undefined}
                   />
                   {meta.label}
                 </button>
@@ -458,8 +459,10 @@ export default function AdminAnalyticsPage() {
                     borderRadius: '8px',
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                     fontSize: '12px',
+                    color: '#111827',
                   }}
-                  labelStyle={{ fontWeight: 600, marginBottom: '4px' }}
+                  labelStyle={{ fontWeight: 600, marginBottom: '4px', color: '#111827' }}
+                  itemStyle={{ color: '#374151' }}
                 />
                 {enabledSeries.total && (
                   <Area
@@ -654,12 +657,18 @@ export default function AdminAnalyticsPage() {
                       borderRadius: '8px',
                       boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
                       fontSize: '12px',
+                      color: '#111827',
                     }}
-                    formatter={(value: number, _name: string, props: { payload: { percent: number } }) => [
-                      `${value} bookings (${props.payload.percent}%)`,
-                      '',
-                    ]}
-                    labelStyle={{ fontWeight: 600, marginBottom: '4px' }}
+                    content={({ payload }) => {
+                      if (!payload || payload.length === 0) return null;
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2">
+                          <p className="font-semibold text-gray-900 text-sm">{data.name}</p>
+                          <p className="text-gray-600 text-xs">{data.value} bookings ({data.percent}%)</p>
+                        </div>
+                      );
+                    }}
                   />
                   <Bar
                     dataKey="value"
@@ -708,17 +717,16 @@ export default function AdminAnalyticsPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#fff',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                      fontSize: '12px',
+                    content={({ payload }) => {
+                      if (!payload || payload.length === 0) return null;
+                      const data = payload[0].payload;
+                      return (
+                        <div className="bg-white border border-gray-200 rounded-lg shadow-md px-3 py-2">
+                          <p className="font-semibold text-gray-900 text-sm">{data.name}</p>
+                          <p className="text-gray-600 text-xs">{data.value} bookings ({data.percent}%)</p>
+                        </div>
+                      );
                     }}
-                    formatter={(value: number, _name: string, props: { payload: { percent: number } }) => [
-                      `${value} bookings (${props.payload.percent}%)`,
-                      '',
-                    ]}
                   />
                 </PieChart>
               </ResponsiveContainer>

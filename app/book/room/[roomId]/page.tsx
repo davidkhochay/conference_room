@@ -1172,10 +1172,10 @@ export default function RoomBookingPage() {
                             <select
                               value={dayOfMonth}
                               onChange={(e) => setDayOfMonth(parseInt(e.target.value))}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                             >
                               {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
-                                <option key={day} value={day}>
+                                <option key={day} value={day} className="text-gray-900">
                                   {day === 1 ? '1st' : day === 2 ? '2nd' : day === 3 ? '3rd' : `${day}th`}
                                 </option>
                               ))}
