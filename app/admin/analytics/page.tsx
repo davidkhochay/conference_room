@@ -134,7 +134,11 @@ export default function AdminAnalyticsPage() {
 
   const sourceCounts = bookings.reduce(
     (acc, b) => {
-      const key = (b.source || 'unknown') as BookingSource;
+      // Combine 'api' and 'google_calendar' into a single 'google_calendar' entry
+      let key = (b.source || 'unknown') as BookingSource;
+      if (key === 'api') {
+        key = 'google_calendar';
+      }
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     },
@@ -692,7 +696,7 @@ export default function AdminAnalyticsPage() {
                           ? 'Web'
                           : item.key === 'admin'
                           ? 'Admin'
-                          : item.key === 'api' || item.key === 'google_calendar'
+                          : item.key === 'google_calendar'
                           ? 'Google Calendar'
                           : 'Other',
                       value: item.count,

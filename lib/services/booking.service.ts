@@ -968,12 +968,17 @@ export class BookingService {
     }
 
     const now = new Date();
+    const startTime = new Date(booking.start_time);
+    
+    // Ensure end_time is always after start_time to satisfy the valid_time_range constraint
+    // If ending before the booking started, set end_time to 1 minute after start
+    const endTime = now > startTime ? now : new Date(startTime.getTime() + 60 * 1000);
 
     // Update booking in database first and verify it succeeded
     const { data: updatedBooking, error: updateError } = await this.supabase
       .from('bookings')
       .update({
-        end_time: now.toISOString(),
+        end_time: endTime.toISOString(),
         status: 'ended',
       })
       .eq('id', bookingId)
@@ -998,7 +1003,7 @@ export class BookingService {
           booking.google_event_id,
           {
             end: {
-              dateTime: now.toISOString(),
+              dateTime: endTime.toISOString(),
               timeZone: timezone,
             },
           }

@@ -17,8 +17,9 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: null });
   } catch (error: any) {
+    console.error('End booking error:', error);
     return NextResponse.json(
-      { success: false, error: { error: 'END_ERROR', message: error.message } },
+      { success: false, error: { error: 'END_ERROR', message: error.message || 'Unknown error' } },
       { status: 400 }
     );
   }

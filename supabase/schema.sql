@@ -86,7 +86,7 @@ CREATE TABLE bookings (
   end_time TIMESTAMPTZ NOT NULL,
   google_event_id TEXT UNIQUE,
   google_calendar_id TEXT,
-  source TEXT NOT NULL CHECK (source IN ('tablet', 'web', 'api', 'admin')),
+  source TEXT NOT NULL CHECK (source IN ('tablet', 'web', 'api', 'admin', 'google_calendar')),
   status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'in_progress', 'ended', 'cancelled', 'no_show')),
   check_in_time TIMESTAMPTZ,
   extended_count INTEGER NOT NULL DEFAULT 0,
