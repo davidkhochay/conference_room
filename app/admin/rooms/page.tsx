@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
-import { Plus, Pencil, Trash2, QrCode, Users } from 'lucide-react';
+import { Plus, Pencil, Trash2, QrCode, Users, Monitor } from 'lucide-react';
 import Link from 'next/link';
 
 interface Room {
@@ -136,15 +136,26 @@ export default function RoomsPage() {
                   </p>
                 </div>
 
-                {/* QR Code button (bottom-right on image) */}
-                <Link
-                  href={`/admin/rooms/${room.id}/qr`}
-                  className="absolute bottom-3 right-3"
-                >
-                  <button className="w-10 h-10 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow-md hover:bg-white transition">
-                    <QrCode className="w-4 h-4" />
-                  </button>
-                </Link>
+                {/* Action buttons (bottom-right on image) */}
+                <div className="absolute bottom-3 right-3 flex gap-2">
+                  <Link
+                    href={`/tablet/${room.id}?device=computer`}
+                    target="_blank"
+                    title="View Tablet Display"
+                  >
+                    <button className="w-10 h-10 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow-md hover:bg-white transition">
+                      <Monitor className="w-4 h-4" />
+                    </button>
+                  </Link>
+                  <Link
+                    href={`/admin/rooms/${room.id}/qr`}
+                    title="View QR Code"
+                  >
+                    <button className="w-10 h-10 rounded-full bg-white/90 text-gray-800 flex items-center justify-center shadow-md hover:bg-white transition">
+                      <QrCode className="w-4 h-4" />
+                    </button>
+                  </Link>
+                </div>
               </div>
 
               {/* Room Info Section */}

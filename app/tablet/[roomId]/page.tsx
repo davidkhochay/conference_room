@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase/client';
 interface RoomStatus {
   room_id: string;
   room_name: string;
+  room_status?: 'active' | 'maintenance' | 'disabled';
   location_name: string;
   photo_url: string | null;
   capacity: number;
@@ -69,6 +70,57 @@ function GCalBadge({ className = '' }: { className?: string }) {
         />
       </svg>
     </span>
+  );
+}
+
+// Caution tape component for maintenance mode - realistic tape strips with "CAUTION" text
+function CautionTapeStrip({ rotation = 0, className = '' }: { rotation?: number; className?: string }) {
+  return (
+    <div 
+      className={`relative w-full ${className}`}
+      style={{ transform: `rotate(${rotation}deg)` }}
+    >
+      <div className="relative h-12 w-[200%] -ml-[50%] flex items-center">
+        {/* Top border stripe */}
+        <div 
+          className="absolute top-0 left-0 right-0 h-2"
+          style={{
+            background: 'repeating-linear-gradient(45deg, #000 0px, #000 8px, #FFD700 8px, #FFD700 16px)'
+          }}
+        />
+        {/* Main yellow area with CAUTION text */}
+        <div className="flex-1 bg-[#FFD700] h-8 mt-2 flex items-center justify-center overflow-hidden">
+          <div className="flex items-center gap-8 animate-none whitespace-nowrap">
+            {Array.from({ length: 20 }).map((_, i) => (
+              <span key={i} className="text-black font-black text-lg tracking-widest">
+                CAUTION
+              </span>
+            ))}
+          </div>
+        </div>
+        {/* Bottom border stripe */}
+        <div 
+          className="absolute bottom-0 left-0 right-0 h-2"
+          style={{
+            background: 'repeating-linear-gradient(45deg, #000 0px, #000 8px, #FFD700 8px, #FFD700 16px)'
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Container for multiple caution tape strips - starts below status text
+function CautionTapeOverlay() {
+  return (
+    <div className="absolute left-0 right-0 bottom-0 top-[45%] flex flex-col justify-evenly overflow-hidden pointer-events-none z-[5]">
+      <CautionTapeStrip rotation={-4} />
+      <CautionTapeStrip rotation={3} />
+      <CautionTapeStrip rotation={-2} />
+      <CautionTapeStrip rotation={5} />
+      <CautionTapeStrip rotation={-3} />
+      <CautionTapeStrip rotation={2} />
+    </div>
   );
 }
 
@@ -1041,8 +1093,15 @@ export default function TabletDisplay() {
     }
   };
 
+  // Check if room is in maintenance mode
+  const isMaintenanceMode = status.room_status === 'maintenance';
+
   // Determine background color based on room status
   const getBackgroundColor = () => {
+    if (isMaintenanceMode) {
+      // Construction orange for maintenance
+      return 'bg-[#FF6B00]';
+    }
     if (status.is_occupied && !justReleased) {
       // Red primary when in a meeting
       return 'bg-[#EC5353]';
@@ -1056,6 +1115,10 @@ export default function TabletDisplay() {
   };
 
   const getFloorMapBgColor = () => {
+    if (isMaintenanceMode) {
+      // Lighter orange for maintenance
+      return 'bg-[#FF8C42]';
+    }
     if (status.is_occupied && !justReleased) {
       // Secondary red
       return 'bg-[#E87C7C]';
@@ -1069,6 +1132,9 @@ export default function TabletDisplay() {
   };
 
   const getScheduleBgColor = () => {
+    if (isMaintenanceMode) {
+      return 'bg-[#FF6B00]';
+    }
     if (status.is_occupied && !justReleased) {
       return 'bg-[#EC5353]';
     } else if (showCheckIn) {
@@ -1079,6 +1145,9 @@ export default function TabletDisplay() {
   };
 
   const getEventCardColor = () => {
+    if (isMaintenanceMode) {
+      return 'bg-[#FF8C42]';
+    }
     if (status.is_occupied && !justReleased) {
       return 'bg-[#E87C7C]';
     } else if (showCheckIn) {
@@ -1089,6 +1158,9 @@ export default function TabletDisplay() {
   };
 
   const getTextColor = () => {
+    if (isMaintenanceMode) {
+      return 'text-white';
+    }
     if (status.is_occupied && !justReleased) {
       return 'text-white';
     } else {
@@ -1113,6 +1185,16 @@ export default function TabletDisplay() {
   };
 
   const getStatusText = () => {
+    // Maintenance mode takes priority
+    if (isMaintenanceMode) {
+      return {
+        title: 'Under Maintenance',
+        subtitle: null,
+        host: null,
+        isGoogleCalendar: false,
+      };
+    }
+
     // When we just released a meeting, force a clean "Available" state
     if (justReleased) {
       return {
@@ -1344,6 +1426,9 @@ export default function TabletDisplay() {
 
   return (
     <div className={rootClassName}>
+      {/* Caution tape overlay for maintenance mode - fills bottom of screen */}
+      {isMaintenanceMode && <CautionTapeOverlay />}
+      
       <div className={shellClassName}>
         {/* Header */}
         <div className="px-12 py-8 flex items-center justify-between gap-6 tablet-btn">
@@ -1370,8 +1455,8 @@ export default function TabletDisplay() {
         </div>
 
         {/* Main Content */}
-        {isTablet8 && showSidebarBookings ? (
-          // 8" tablet with bookings today: two-column layout
+        {isTablet8 && showSidebarBookings && !isMaintenanceMode ? (
+          // 8" tablet with bookings today: two-column layout (hidden in maintenance mode)
           <div className="flex-1 flex flex-row items-start px-12 gap-10 tablet-btn">
             {/* Left: room name, status, actions */}
             <div className="flex flex-col flex-[3] pt-4">
@@ -1442,8 +1527,8 @@ export default function TabletDisplay() {
                     : 'opacity-100 translate-y-0'
                 }`}
               >
-                {/* Green: quick book */}
-                {isAvailable && !showCheckIn && !showBookingForm && (
+                {/* Green: quick book (hidden in maintenance mode) */}
+                {isAvailable && !showCheckIn && !showBookingForm && !isMaintenanceMode && (
                   <button
                     onClick={() => handleQuickBookClick(30)}
                     className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
@@ -1544,7 +1629,7 @@ export default function TabletDisplay() {
         ) : (
           <div
             className={`flex-1 flex flex-col items-center px-12 tablet-btn ${
-              isAmazon ? 'justify-start pt-4' : 'justify-center'
+              isAmazon ? 'justify-start pt-4' : isMaintenanceMode ? 'justify-start pt-16' : 'justify-center'
             }`}
           >
             {/* Feature / capacity badges (non-Amazon layouts) */}
@@ -1556,7 +1641,8 @@ export default function TabletDisplay() {
                 isComputer ? 'text-7xl' : isAmazon ? 'text-8xl' : 'text-9xl'
               } font-bold text-gray-900 ${
                 isTablet8 ? 'mb-8' : 'mb-12'
-              } text-center tablet-btn`}
+              } text-center tablet-btn ${isMaintenanceMode ? 'relative z-20' : ''}`}
+              style={isMaintenanceMode ? { textShadow: '0 4px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3)' } : undefined}
             >
               {status.room_name}
             </h1>
@@ -1622,7 +1708,10 @@ export default function TabletDisplay() {
                         </h3>
                       </>
                     ) : (
-                      <h2 className="text-4xl font-semibold text-white">
+                      <h2 
+                        className={`text-4xl font-semibold text-white ${isMaintenanceMode ? 'relative z-20' : ''}`}
+                        style={isMaintenanceMode ? { textShadow: '0 4px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3)' } : undefined}
+                      >
                         {statusInfo.title}
                       </h2>
                     )}
@@ -1671,13 +1760,16 @@ export default function TabletDisplay() {
                       )}
                     </>
                   ) : (
-                    <h2
-                      className={`${
-                        isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'
-                      } font-semibold text-white`}
-                    >
-                      {statusInfo.title}
-                    </h2>
+                    <>
+                      <h2
+                        className={`${
+                          isComputer ? 'text-5xl' : isAmazon ? 'text-6xl' : 'text-7xl'
+                        } font-semibold text-white ${isMaintenanceMode ? 'relative z-20' : ''}`}
+                        style={isMaintenanceMode ? { textShadow: '0 4px 20px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3)' } : undefined}
+                      >
+                        {statusInfo.title}
+                      </h2>
+                    </>
                   )}
                 </>
               )}
@@ -1691,8 +1783,8 @@ export default function TabletDisplay() {
                   : 'opacity-100 translate-y-0'
               }`}
             >
-              {/* Green: quick book */}
-              {isAvailable && !showCheckIn && !showBookingForm && (
+              {/* Green: quick book (hidden in maintenance mode) */}
+              {isAvailable && !showCheckIn && !showBookingForm && !isMaintenanceMode && (
                 <button
                   onClick={() => handleQuickBookClick(30)}
                   className="tablet-btn tablet-btn-xl tablet-shadow h-24 px-20 bg-white/90 hover:bg-white text-gray-900 rounded-full transition-all transform hover:scale-105"
@@ -1742,71 +1834,73 @@ export default function TabletDisplay() {
           </div>
         )}
 
-        {/* Bottom Section - Next Bookings */}
-        <div
-          className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
-            isAmazon ? 'py-4' : 'py-8'
-          } tablet-btn`}
-        >
+        {/* Bottom Section - Next Bookings (hidden in maintenance mode) */}
+        {!isMaintenanceMode && (
           <div
-            ref={eventsScrollRef}
-            className={`max-w-7xl mx-auto tablet-btn no-scrollbar ${
-              hasBookingsForDay && !(isTablet8 && showSidebarBookings)
-                ? 'max-h-64 overflow-y-auto space-y-5 pb-8 pr-24'
-                : 'h-32 flex items-center justify-center'
-            }`}
+            className={`${getScheduleBgColor()} ${bookingsOffsetClass} backdrop-blur-sm px-12 ${
+              isAmazon ? 'py-4' : 'py-8'
+            } tablet-btn`}
           >
-            {isTablet8 && showSidebarBookings ? null : (
-              <>
-                {hasBookingsForDay &&
-                  filteredDayBookings.map((booking) => {
-                    const isTapEnabled =
-                      isAvailable && !showCheckIn && isToday(selectedDate);
+            <div
+              ref={eventsScrollRef}
+              className={`max-w-7xl mx-auto tablet-btn no-scrollbar ${
+                hasBookingsForDay && !(isTablet8 && showSidebarBookings)
+                  ? 'max-h-64 overflow-y-auto space-y-5 pb-8 pr-24'
+                  : 'h-32 flex items-center justify-center'
+              }`}
+            >
+              {isTablet8 && showSidebarBookings ? null : (
+                <>
+                  {hasBookingsForDay &&
+                    filteredDayBookings.map((booking) => {
+                      const isTapEnabled =
+                        isAvailable && !showCheckIn && isToday(selectedDate);
 
-                    return (
-                      <button
-                        key={booking.id}
-                        type="button"
-                        onClick={
-                          isTapEnabled ? () => handleCheckIn(booking.id) : undefined
-                        }
-                        className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
-                          isTapEnabled
-                            ? 'active:scale-[0.99] cursor-pointer'
-                            : 'cursor-default'
-                        } transition-transform`}
-                      >
-                        <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
-                          <span>
-                            {formatTime(booking.start_time)}-
-                            {formatTime(booking.end_time)}
-                          </span>
-                          <span>•</span>
-                          <Users className="w-6 h-6" />
-                          <span>{booking.attendee_count}</span>
-                        </div>
-                        <div className="text-gray-900 text-3xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
-                          {booking.title}{' '}
-                          {isFromGoogleCalendar(booking) && <GCalBadge />}
-                          {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
-                        </div>
-                        {isTapEnabled && (
-                          <div className="mt-1 text-base text-gray-900/80 tablet-btn">
-                            Tap to check in
+                      return (
+                        <button
+                          key={booking.id}
+                          type="button"
+                          onClick={
+                            isTapEnabled ? () => handleCheckIn(booking.id) : undefined
+                          }
+                          className={`w-full text-left tablet-shadow rounded-3xl px-8 py-6 ${getEventCardColor()} ${
+                            isTapEnabled
+                              ? 'active:scale-[0.99] cursor-pointer'
+                              : 'cursor-default'
+                          } transition-transform`}
+                        >
+                          <div className="flex items-center gap-3 text-gray-900 text-2xl font-medium mb-1 tablet-btn">
+                            <span>
+                              {formatTime(booking.start_time)}-
+                              {formatTime(booking.end_time)}
+                            </span>
+                            <span>•</span>
+                            <Users className="w-6 h-6" />
+                            <span>{booking.attendee_count}</span>
                           </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                {!hasBookingsForDay && (
-                  <div className="text-center text-gray-700 text-3xl">
-                    No more bookings today
-                  </div>
-                )}
-              </>
-            )}
+                          <div className="text-gray-900 text-3xl font-bold tablet-btn flex items-center gap-2 flex-wrap">
+                            {booking.title}{' '}
+                            {isFromGoogleCalendar(booking) && <GCalBadge />}
+                            {(booking.host_name || booking.organizer_email) && <span className="font-normal">by {booking.host_name || booking.organizer_email}</span>}
+                          </div>
+                          {isTapEnabled && (
+                            <div className="mt-1 text-base text-gray-900/80 tablet-btn">
+                              Tap to check in
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  {!hasBookingsForDay && (
+                    <div className="text-center text-gray-700 text-3xl">
+                      No more bookings today
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Floating PIN Button (bottom-right, only when checked in and room has PIN) */}
         {status?.current_booking && status?.ui_state === 'busy' && status?.pin_code && (

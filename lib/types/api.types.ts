@@ -80,6 +80,7 @@ export type UpdateRoomRequest = z.infer<typeof UpdateRoomSchema>;
 export type RoomStatusResponse = {
   room_id: string;
   room_name: string;
+  room_status: 'active' | 'maintenance' | 'disabled';
   location_name: string;
   photo_url: string | null;
   capacity: number;

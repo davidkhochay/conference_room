@@ -336,23 +336,23 @@ export async function syncRoomFromGoogle(
           : null;
         
         return {
-          // Required fields
-          room_id: b.room_id,
-          title: b.title,
-          description: b.description,
-          start_time: b.start_time,
-          end_time: b.end_time,
-          google_event_id: b.google_event_id,
-          google_calendar_id: b.google_calendar_id,
+        // Required fields
+        room_id: b.room_id,
+        title: b.title,
+        description: b.description,
+        start_time: b.start_time,
+        end_time: b.end_time,
+        google_event_id: b.google_event_id,
+        google_calendar_id: b.google_calendar_id,
           // Preserve source if this is actually an update (booking exists with this google_event_id)
           source: existingRecord ? existingRecord.source : b.source,
-          status: b.status,
-          attendee_emails: b.attendee_emails || [],
-          organizer_email: b.organizer_email,
+        status: b.status,
+        attendee_emails: b.attendee_emails || [],
+        organizer_email: b.organizer_email,
           // CRITICAL: Preserve external_source if booking already exists to avoid
           // incorrectly marking tablet/web bookings as Google Calendar bookings
           external_source: existingRecord ? existingRecord.external_source : b.external_source,
-          last_synced_at: b.last_synced_at,
+        last_synced_at: b.last_synced_at,
         };
       }),
       { onConflict: 'google_event_id', ignoreDuplicates: false }

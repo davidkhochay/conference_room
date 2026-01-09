@@ -176,6 +176,7 @@ export async function GET(
     const response: RoomStatusResponse = {
       room_id: room.id,
       room_name: room.name,
+      room_status: room.status || 'active',
       location_name: room.location.name,
       photo_url: room.photo_url,
       capacity: room.capacity,

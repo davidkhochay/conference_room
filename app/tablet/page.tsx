@@ -33,7 +33,8 @@ export default function TabletRoomSelector() {
       const result = await response.json();
       
       if (result.success) {
-        setRooms(result.data.filter((room: Room) => room.status === 'active'));
+        // Include both active and maintenance rooms (exclude only disabled)
+        setRooms(result.data.filter((room: Room) => room.status === 'active' || room.status === 'maintenance'));
       }
     } catch (error) {
       console.error('Failed to fetch rooms:', error);
@@ -163,6 +164,13 @@ export default function TabletRoomSelector() {
                       <div className="w-full h-full bg-gray-200" />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
+                    
+                    {/* Maintenance Badge */}
+                    {room.status === 'maintenance' && (
+                      <div className="absolute top-3 right-3 bg-orange-500 text-white text-xs font-bold px-3 py-1 rounded-full">
+                        Under Maintenance
+                      </div>
+                    )}
                     
                     {/* Room Name Overlay */}
                     <div className="absolute bottom-0 left-0 right-0 p-6">
