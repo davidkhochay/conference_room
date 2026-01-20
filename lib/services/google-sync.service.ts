@@ -310,19 +310,19 @@ export async function syncRoomFromGoogle(
       .map((b) => b.google_event_id)
       .filter((id): id is string => !!id);
 
-    let existingByEventIdForInserts: Record<string, { source: string; external_source: string | null }> = {};
+    let existingByEventIdForInserts: Record<string, { source: string; external_source: string | null; status: string }> = {};
     
     if (eventIds.length > 0) {
       const { data: existingForInserts } = await supabase
         .from('bookings')
-        .select('google_event_id, source, external_source')
+        .select('google_event_id, source, external_source, status')
         .in('google_event_id', eventIds);
       
       if (existingForInserts) {
         existingByEventIdForInserts = Object.fromEntries(
           existingForInserts.map((b) => [
             b.google_event_id,
-            { source: b.source, external_source: b.external_source },
+            { source: b.source, external_source: b.external_source, status: b.status },
           ])
         );
       }
@@ -335,6 +335,16 @@ export async function syncRoomFromGoogle(
           ? existingByEventIdForInserts[b.google_event_id]
           : null;
         
+        // Determine effective status: preserve in_progress/ended/no_show/cancelled statuses
+        // when a booking already exists, otherwise use the computed status
+        let effectiveStatus = b.status;
+        if (existingRecord) {
+          const preservedStatuses = ['in_progress', 'ended', 'no_show', 'cancelled'];
+          if (preservedStatuses.includes(existingRecord.status)) {
+            effectiveStatus = existingRecord.status as typeof effectiveStatus;
+          }
+        }
+        
         return {
         // Required fields
         room_id: b.room_id,
@@ -346,7 +356,9 @@ export async function syncRoomFromGoogle(
         google_calendar_id: b.google_calendar_id,
           // Preserve source if this is actually an update (booking exists with this google_event_id)
           source: existingRecord ? existingRecord.source : b.source,
-        status: b.status,
+          // CRITICAL: Preserve lifecycle statuses (in_progress, ended, no_show, cancelled)
+          // to avoid auto-checked-in tablet bookings reverting to scheduled
+          status: effectiveStatus,
         attendee_emails: b.attendee_emails || [],
         organizer_email: b.organizer_email,
           // CRITICAL: Preserve external_source if booking already exists to avoid

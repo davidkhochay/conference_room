@@ -55,18 +55,36 @@ export async function GET(request: NextRequest) {
     const supabase = getServerAdminClient();
 
     if (roomId) {
+      // Check if there are any recently created tablet bookings that are already
+      // in_progress (auto-checked-in). Skip sync to prevent race conditions where
+      // Google Calendar sync might interfere with the freshly created booking state.
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+      const { data: recentlyCreatedTablet } = await supabase
+        .from('bookings')
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('status', 'in_progress')
+        .eq('source', 'tablet')
+        .gte('created_at', twoMinutesAgo)
+        .limit(1);
+
+      const shouldSkipSync = recentlyCreatedTablet && recentlyCreatedTablet.length > 0;
+
       // Refresh this room's bookings from Google so calendars and tablets show
       // up-to-date events including meetings created directly in Google.
-      try {
-        await syncRoomFromGoogle(roomId, { force: forceSync });
-      } catch (e: any) {
-        console.error('Failed to sync room from Google (non-fatal)', {
-          roomId,
-          message: e?.message,
-          code: e?.code,
-          status: e?.status,
-          details: e,
-        });
+      // Skip if we just created a tablet booking to prevent race conditions.
+      if (!shouldSkipSync) {
+        try {
+          await syncRoomFromGoogle(roomId, { force: forceSync });
+        } catch (e: any) {
+          console.error('Failed to sync room from Google (non-fatal)', {
+            roomId,
+            message: e?.message,
+            code: e?.code,
+            status: e?.status,
+            details: e,
+          });
+        }
       }
     }
 

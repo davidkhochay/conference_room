@@ -164,6 +164,11 @@ export type Booking = {
   recurrence_rule?: RecurrenceRule | null;
   recurrence_end_date?: string | null;
   recurring_parent_id?: string | null;
+  /**
+   * Overdue reminder fields - for 30-min post-booking emails
+   */
+  overdue_reminder_sent_at?: string | null;
+  action_token?: string | null;
   created_at: string;
   updated_at: string;
 };

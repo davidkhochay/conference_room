@@ -13,7 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
-import { format } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import { supabase } from '@/lib/supabase/client';
 
 interface Booking {
@@ -413,19 +413,26 @@ export default function BookingPage() {
                       {/* Availability snippet */}
                       <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-400" />
-                        {isAvailable && room.availability.availableUntil && (
-                          <span>
-                            Free until{' '}
-                            {format(
-                              new Date(room.availability.availableUntil),
-                              'h:mm a'
-                            )}
-                          </span>
-                      )}
+                        {isAvailable &&
+                          room.availability.availableUntil &&
+                          isToday(new Date(room.availability.availableUntil)) && (
+                            <span>
+                              Free until{' '}
+                              {format(
+                                new Date(room.availability.availableUntil),
+                                'h:mm a'
+                              )}
+                            </span>
+                          )}
+                        {isAvailable &&
+                          (!room.availability.availableUntil ||
+                            !isToday(new Date(room.availability.availableUntil))) && (
+                            <span>No bookings scheduled for today</span>
+                          )}
                         {isBusy &&
                           room.availability.currentBooking &&
                           room.availability.currentBooking.end_time && (
-                          <span>
+                            <span>
                               Busy until{' '}
                               {format(
                                 new Date(
@@ -434,7 +441,7 @@ export default function BookingPage() {
                                 'h:mm a'
                               )}
                             </span>
-                      )}
+                          )}
                         {isStartingSoon &&
                           room.availability.currentBooking &&
                           room.availability.currentBooking.start_time && (
@@ -448,11 +455,7 @@ export default function BookingPage() {
                               )}
                             </span>
                           )}
-                        {!room.availability.availableUntil &&
-                          !room.availability.currentBooking && (
-                            <span>See details</span>
-                        )}
-                    </div>
+                      </div>
 
                       {/* CTA */}
                       <div className="pt-3">

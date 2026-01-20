@@ -26,7 +26,20 @@ export async function GET(
       .gte('updated_at', twoMinutesAgo)
       .limit(1);
 
-    const shouldSkipSync = recentlyEnded && recentlyEnded.length > 0;
+    // Also check for recently created tablet bookings that are already in_progress
+    // (auto-checked-in). Skip sync to prevent race conditions where Google Calendar
+    // sync might interfere with the freshly created booking state.
+    const { data: recentlyCreatedTablet } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('room_id', roomId)
+      .eq('status', 'in_progress')
+      .eq('source', 'tablet')
+      .gte('created_at', twoMinutesAgo)
+      .limit(1);
+
+    const shouldSkipSync = (recentlyEnded && recentlyEnded.length > 0) ||
+                           (recentlyCreatedTablet && recentlyCreatedTablet.length > 0);
 
     // Opportunistically refresh bookings for this room from Google Calendar so
     // tablets and maps see Google‑originated meetings as well.
@@ -72,7 +85,38 @@ export async function GET(
       .limit(1)
       .maybeSingle();
 
-    const currentBooking = inProgressBooking || null;
+    // Also check for recently created tablet bookings that have check_in_time set
+    // but whose status might have been incorrectly overwritten by Google sync.
+    // These bookings should be treated as in_progress.
+    let currentBooking = inProgressBooking || null;
+    
+    if (!currentBooking) {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: autoCheckedInTabletBooking } = await supabase
+        .from('bookings')
+        .select('*, host:users(name)')
+        .eq('room_id', roomId)
+        .eq('source', 'tablet')
+        .not('check_in_time', 'is', null)
+        .gte('created_at', fiveMinutesAgo)
+        .lte('start_time', now.toISOString())
+        .gte('end_time', now.toISOString())
+        .in('status', ['scheduled', 'in_progress']) // Not cancelled/ended
+        .order('start_time', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      if (autoCheckedInTabletBooking) {
+        // Fix the status in the database since it was incorrectly changed
+        await supabase
+          .from('bookings')
+          .update({ status: 'in_progress' })
+          .eq('id', autoCheckedInTabletBooking.id);
+        
+        // Use this booking as the current booking
+        currentBooking = { ...autoCheckedInTabletBooking, status: 'in_progress' };
+      }
+    }
 
     // Get upcoming scheduled bookings, including ones that started within the last
     // 10 minutes. The same 10 minute window is used by the no-show scanner.

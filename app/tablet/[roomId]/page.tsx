@@ -134,6 +134,8 @@ export default function TabletDisplay() {
   const router = useRouter();
 
   const [status, setStatus] = useState<RoomStatus | null>(null);
+  // Ref to temporarily block fetchStatus from overwriting local state after check-in
+  const skipStatusFetchUntil = useRef<number>(0);
   // ... existing state ...
   const [showMap, setShowMap] = useState(false);
   const [floors, setFloors] = useState<Floor[]>([]);
@@ -378,6 +380,13 @@ export default function TabletDisplay() {
 
   const fetchStatus = async (forceSync = false) => {
     try {
+      // Skip if we're within the blocked window after a successful check-in
+      // This prevents realtime subscriptions from overwriting the correct local state
+      if (Date.now() < skipStatusFetchUntil.current) {
+        setLoading(false);
+        return;
+      }
+      
       const url = forceSync 
         ? `/api/rooms/${roomId}/status?force_sync=true` 
         : `/api/rooms/${roomId}/status`;
@@ -585,58 +594,49 @@ export default function TabletDisplay() {
       if (result.success) {
         const bookingId: string | undefined = result.data?.id;
 
-        // For bookings created on THIS room's tablet, auto check-in so the room
-        // immediately goes to "in use" (red) with no extra tap needed.
-        let checkedIn = false;
+        // For bookings created on THIS room's tablet, the backend automatically
+        // creates them as 'in_progress' (auto check-in), so we just need to update
+        // local state to show the room as busy immediately.
         if ((!bookingTarget || bookingTarget.roomId === roomId) && bookingId) {
-          try {
-            const checkinResponse = await fetch(`/api/bookings/${bookingId}/checkin`, {
-              method: 'POST',
-            });
-            if (checkinResponse.ok) {
-              checkedIn = true;
-              // Force immediate red state by updating local status before refresh
-              // This prevents the yellow flash while waiting for server response
-              setStatus((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      is_occupied: true,
-                      ui_state: 'busy',
-                      current_booking: {
-                        id: bookingId,
-                        title,
-                        host_name: host?.name || null,
-                        organizer_email: host?.email || null,
-                        start_time: now.toISOString(),
-                        end_time: endTime.toISOString(),
-                        external_source: null, // Tablet booking, not from Google
-                      },
-                    }
-                  : prev
-              );
-            } else {
-              console.error('Check-in failed with status:', checkinResponse.status);
-            }
-          } catch (err) {
-            console.error('Failed to auto check-in booking from tablet:', err);
-          }
+          // Block fetchStatus for 2 minutes to prevent realtime subscriptions
+          // and Google sync race conditions from overwriting the correct local state.
+          // This matches the backend's 2-minute window for skipping sync on recently
+          // created tablet bookings.
+          skipStatusFetchUntil.current = Date.now() + 120000;
+          
+          // Force immediate red state by updating local status
+          setStatus((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  is_occupied: true,
+                  ui_state: 'busy',
+                  current_booking: {
+                    id: bookingId,
+                    title,
+                    host_name: host?.name || null,
+                    organizer_email: host?.email || null,
+                    start_time: now.toISOString(),
+                    end_time: endTime.toISOString(),
+                    external_source: null, // Tablet booking, not from Google
+                  },
+                }
+              : prev
+          );
         }
 
         // Close modal first so user sees the update
         handleCancelBooking();
         
-        // Immediately refresh this tablet's status if we booked for the same room
+        // Refresh bookings list
         if (!bookingTarget || bookingTarget.roomId === roomId) {
-          await fetchStatus();
           await fetchBookings();
           
-          // Force another refresh after a brief delay to ensure all database
-          // changes have propagated and UI is fully updated
+          // Delayed refresh to ensure everything is synced (after the 2 min block expires)
           setTimeout(async () => {
             await fetchStatus();
             await fetchBookings();
-          }, 500);
+          }, 121000);
         }
       } else {
         alert(`Failed to book: ${result.error?.message}`);

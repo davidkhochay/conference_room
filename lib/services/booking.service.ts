@@ -353,6 +353,10 @@ export class BookingService {
       host = hostData as User;
     }
 
+    // For tablet bookings that start now, create directly as in_progress (auto check-in)
+    const isTabletBookingStartingNow = request.source === 'tablet' && 
+      Math.abs(new Date(request.start_time).getTime() - Date.now()) < 60000; // Within 1 minute of now
+    
     // Create booking
     const { data: booking, error: bookingError } = await this.supabase
       .from('bookings')
@@ -364,7 +368,8 @@ export class BookingService {
         start_time: request.start_time,
         end_time: request.end_time,
         source: request.source,
-        status: 'scheduled',
+        status: isTabletBookingStartingNow ? 'in_progress' : 'scheduled',
+        check_in_time: isTabletBookingStartingNow ? new Date().toISOString() : null,
         attendee_emails: request.attendee_emails || [],
       })
       .select()
@@ -372,6 +377,14 @@ export class BookingService {
 
     if (bookingError || !booking) {
       throw new Error('Failed to create booking');
+    }
+
+    // Log activity for tablet auto-check-in bookings
+    if (isTabletBookingStartingNow) {
+      await this.logBookingActivity(booking.id, 'checked_in', request.host_user_id || undefined, {
+        auto_checkin: true,
+        source: 'tablet',
+      });
     }
 
     // Create Google Calendar event (optional - booking works without it)
@@ -1105,6 +1118,181 @@ export class BookingService {
       performed_by_user_id: userId,
       metadata: metadata || {},
     });
+  }
+
+  /**
+   * Find bookings that are 30+ minutes past their end time and haven't received
+   * a reminder email yet. Only includes bookings with a host (someone to email).
+   */
+  async findOverdueBookings(): Promise<Array<{
+    id: string;
+    room_id: string;
+    host_user_id: string;
+    title: string;
+    start_time: string;
+    end_time: string;
+    room: { id: string; name: string; google_calendar_id: string | null; google_resource_id: string | null; location: { timezone: string } };
+    host: { id: string; name: string; email: string };
+  }>> {
+    const overdueMinutes = 30;
+    const cutoff = new Date(Date.now() - overdueMinutes * 60 * 1000).toISOString();
+
+    const { data, error } = await this.supabase
+      .from('bookings')
+      .select(`
+        id,
+        room_id,
+        host_user_id,
+        title,
+        start_time,
+        end_time,
+        room:rooms!inner(
+          id,
+          name,
+          google_calendar_id,
+          google_resource_id,
+          location:locations!inner(timezone)
+        ),
+        host:users!inner(id, name, email)
+      `)
+      .in('status', ['in_progress', 'scheduled'])
+      .is('overdue_reminder_sent_at', null)
+      .not('host_user_id', 'is', null)
+      .lte('end_time', cutoff)
+      .limit(50);
+
+    if (error) {
+      console.error('Failed to find overdue bookings:', error);
+      throw new Error(`Failed to find overdue bookings: ${error.message}`);
+    }
+
+    return (data || []) as any;
+  }
+
+  /**
+   * Mark a booking as having received an overdue reminder and store the action token
+   */
+  async markOverdueReminderSent(bookingId: string, actionToken: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('bookings')
+      .update({
+        overdue_reminder_sent_at: new Date().toISOString(),
+        action_token: actionToken,
+      })
+      .eq('id', bookingId);
+
+    if (error) {
+      throw new Error(`Failed to mark reminder sent: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get a booking by its action token (for email action links)
+   */
+  async getBookingByActionToken(token: string): Promise<{
+    booking: Booking & { room: Room & { location: { timezone: string } }; host: User | null };
+  } | null> {
+    const { data, error } = await this.supabase
+      .from('bookings')
+      .select(`
+        *,
+        room:rooms!inner(*, location:locations!inner(timezone)),
+        host:users(*)
+      `)
+      .eq('action_token', token)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    return { booking: data as any };
+  }
+
+  /**
+   * Check if a room can be extended by the given minutes
+   * Returns the next conflicting event details if there's a conflict
+   */
+  async checkExtensionAvailability(
+    bookingId: string,
+    additionalMinutes: number
+  ): Promise<{
+    canExtend: boolean;
+    conflict?: {
+      start: string;
+      end: string;
+      title?: string;
+      organizer?: string;
+    };
+  }> {
+    const { data: booking, error } = await this.supabase
+      .from('bookings')
+      .select('*, room:rooms!inner(google_calendar_id, google_resource_id)')
+      .eq('id', bookingId)
+      .single();
+
+    if (error || !booking) {
+      throw new Error('Booking not found');
+    }
+
+    const currentEndTime = new Date(booking.end_time);
+    const newEndTime = new Date(currentEndTime.getTime() + additionalMinutes * 60 * 1000);
+    
+    const calendarId = booking.room.google_calendar_id || booking.room.google_resource_id;
+    
+    if (!calendarId) {
+      // No Google calendar linked - allow extension
+      return { canExtend: true };
+    }
+
+    // Check for conflicts
+    const availability = await this.checkRoomAvailability(
+      calendarId,
+      currentEndTime.toISOString(),
+      newEndTime.toISOString()
+    );
+
+    if (availability.isAvailable) {
+      return { canExtend: true };
+    }
+
+    // Get more details about the conflict
+    const nextConflict = availability.conflicts[0];
+    if (nextConflict) {
+      // Try to get event details from the next booking in our system
+      const { data: nextBooking } = await this.supabase
+        .from('bookings')
+        .select('title, host:users(name, email)')
+        .eq('room_id', booking.room_id)
+        .gt('start_time', booking.end_time)
+        .lte('start_time', newEndTime.toISOString())
+        .in('status', ['scheduled', 'in_progress'])
+        .order('start_time', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      return {
+        canExtend: false,
+        conflict: {
+          start: nextConflict.start,
+          end: nextConflict.end,
+          title: nextBooking?.title,
+          organizer: (nextBooking?.host as any)?.name || (nextBooking?.host as any)?.email,
+        },
+      };
+    }
+
+    return { canExtend: false };
+  }
+
+  /**
+   * Invalidate the action token for a booking (after it's been used)
+   */
+  async invalidateActionToken(bookingId: string): Promise<void> {
+    await this.supabase
+      .from('bookings')
+      .update({ action_token: null })
+      .eq('id', bookingId);
   }
 }
 
