@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       }
 
       const worksheet = workbook.Sheets[firstSheetName];
-      const jsonData = XLSX.utils.sheet_to_json<Record<string, string>>(worksheet, {
+      const jsonData = XLSX.utils.sheet_to_json<string[]>(worksheet, {
         header: 1,
         defval: '',
       }) as string[][];
