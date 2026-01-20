@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
             email: existingUser.email,
             role: existingUser.role,
             company_id: existingUser.company_id,
-            company_name: (existingUser.company as { name: string } | null)?.name || null,
+            company_name: (existingUser.company as { name: string }[] | null)?.[0]?.name || null,
             status: existingUser.status,
           },
         });
