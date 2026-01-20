@@ -529,6 +529,11 @@ export default function TabletDisplay() {
     }
 
     setBookingInProgress(true);
+    
+    // Determine if we're booking this room (vs another room from floor map)
+    // Defined outside try block so it's accessible in catch block
+    const isBookingThisRoom = !bookingTarget || bookingTarget.roomId === roomId;
+    
     try {
       const now = new Date();
       let effectiveDuration = selectedDuration;
@@ -576,6 +581,13 @@ export default function TabletDisplay() {
 
       const targetRoomId = bookingTarget?.roomId || roomId;
 
+      // Block fetchStatus BEFORE making the request to prevent race conditions
+      // where realtime subscription fires before the POST response arrives.
+      // This ensures the tablet stays red (busy) instead of flashing yellow.
+      if (isBookingThisRoom) {
+        skipStatusFetchUntil.current = Date.now() + 120000;
+      }
+
       const response = await fetch('/api/bookings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -597,13 +609,7 @@ export default function TabletDisplay() {
         // For bookings created on THIS room's tablet, the backend automatically
         // creates them as 'in_progress' (auto check-in), so we just need to update
         // local state to show the room as busy immediately.
-        if ((!bookingTarget || bookingTarget.roomId === roomId) && bookingId) {
-          // Block fetchStatus for 2 minutes to prevent realtime subscriptions
-          // and Google sync race conditions from overwriting the correct local state.
-          // This matches the backend's 2-minute window for skipping sync on recently
-          // created tablet bookings.
-          skipStatusFetchUntil.current = Date.now() + 120000;
-          
+        if (isBookingThisRoom && bookingId) {
           // Force immediate red state by updating local status
           setStatus((prev) =>
             prev
@@ -629,7 +635,7 @@ export default function TabletDisplay() {
         handleCancelBooking();
         
         // Refresh bookings list
-        if (!bookingTarget || bookingTarget.roomId === roomId) {
+        if (isBookingThisRoom) {
           await fetchBookings();
           
           // Delayed refresh to ensure everything is synced (after the 2 min block expires)
@@ -639,9 +645,17 @@ export default function TabletDisplay() {
           }, 121000);
         }
       } else {
+        // Clear the skip on failure so status can be fetched normally
+        if (isBookingThisRoom) {
+          skipStatusFetchUntil.current = 0;
+        }
         alert(`Failed to book: ${result.error?.message}`);
       }
     } catch (error) {
+      // Clear the skip on error so status can be fetched normally
+      if (isBookingThisRoom) {
+        skipStatusFetchUntil.current = 0;
+      }
       console.error('Failed to create booking:', error);
       alert('Failed to create booking');
     } finally {
