@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       .select('id, email, name, role, company_id, status, company:companies(name)')
       .in('email', emails);
 
-    const existingUserMap = new Map<string, (typeof existingUsers)[0]>();
+    const existingUserMap = new Map<string, NonNullable<typeof existingUsers>[number]>();
     if (existingUsers) {
       for (const user of existingUsers) {
         existingUserMap.set(user.email.toLowerCase(), user);
