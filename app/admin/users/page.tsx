@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Card } from '@/lib/components/ui/Card';
 import { Button } from '@/lib/components/ui/Button';
@@ -35,7 +35,20 @@ interface Company {
   name: string;
 }
 
+// Wrap the main content in Suspense because useSearchParams() requires it
 export default function AdminUsersPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-gray-600">Loading...</div>
+      </div>
+    }>
+      <AdminUsersContent />
+    </Suspense>
+  );
+}
+
+function AdminUsersContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   
