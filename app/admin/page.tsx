@@ -21,6 +21,94 @@ interface Booking {
   } | null;
 }
 
+interface RoomWithFloor {
+  id: string;
+  name: string;
+  photo_url: string | null;
+  floor_id: string | null;
+  floor?: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+interface RoomStatus {
+  roomId: string;
+  uiState: 'free' | 'checkin' | 'busy';
+}
+
+// Room Status Card Component
+function RoomStatusCard({
+  room,
+  status,
+}: {
+  room: RoomWithFloor;
+  status: RoomStatus | undefined;
+}) {
+  const uiState = status?.uiState || 'free';
+  
+  const getStatusConfig = () => {
+    switch (uiState) {
+      case 'busy':
+        return {
+          label: 'In Use',
+          bgColor: 'bg-rose-500',
+          textColor: 'text-white',
+        };
+      case 'checkin':
+        return {
+          label: 'Check-in',
+          bgColor: 'bg-amber-500',
+          textColor: 'text-white',
+        };
+      case 'free':
+      default:
+        return {
+          label: 'Available',
+          bgColor: 'bg-emerald-500',
+          textColor: 'text-white',
+        };
+    }
+  };
+
+  const { label, bgColor, textColor } = getStatusConfig();
+
+  return (
+    <div
+      className="relative h-32 rounded-2xl overflow-hidden shadow-md group cursor-pointer transition-transform hover:scale-[1.02]"
+    >
+      {/* Background image with dark overlay */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          backgroundImage: room.photo_url
+            ? `url(${room.photo_url})`
+            : 'linear-gradient(135deg, #374151 0%, #1f2937 100%)',
+        }}
+      />
+      {/* Dark overlay */}
+      <div className="absolute inset-0 bg-black/50 group-hover:bg-black/40 transition-colors" />
+      
+      {/* Content */}
+      <div className="relative h-full flex flex-col justify-between p-4">
+        {/* Room name */}
+        <h3 className="text-white font-semibold text-lg drop-shadow-md">
+          {room.name}
+        </h3>
+        
+        {/* Status badge */}
+        <div className="flex justify-end">
+          <span
+            className={`px-3 py-1.5 rounded-full text-xs font-bold ${bgColor} ${textColor} shadow-lg`}
+          >
+            {label}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BookingColumn({
   title,
   bookings,
@@ -79,14 +167,74 @@ export default function AdminDashboard() {
   const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  
+  // Room status state
+  const [floor2Rooms, setFloor2Rooms] = useState<RoomWithFloor[]>([]);
+  const [roomStatuses, setRoomStatuses] = useState<Record<string, RoomStatus>>({});
+  const [roomsLoading, setRoomsLoading] = useState(true);
+
+  // Fetch Floor 2 rooms and their statuses
+  const fetchFloor2RoomsAndStatuses = async () => {
+    try {
+      // First get all rooms
+      const roomsRes = await fetch('/api/rooms?status=all');
+      const roomsData = await roomsRes.json();
+      
+      if (roomsData.success) {
+        // Get floor data for each room to find Floor 2 rooms
+        const roomsWithFloors: RoomWithFloor[] = [];
+        
+        for (const room of roomsData.data) {
+          if (room.floor_id) {
+            // Get floor info
+            const floorRes = await fetch(`/api/admin/locations/${room.location_id}/floors/${room.floor_id}`);
+            const floorData = await floorRes.json();
+            
+            if (floorData.success && floorData.data.name === 'Floor 2') {
+              roomsWithFloors.push({
+                ...room,
+                floor: floorData.data,
+              });
+            }
+          }
+        }
+        
+        setFloor2Rooms(roomsWithFloors);
+        
+        // Fetch status for each Floor 2 room
+        if (roomsWithFloors.length > 0) {
+          const statusPromises = roomsWithFloors.map((r) =>
+            fetch(`/api/rooms/${r.id}/status`).then((res) => res.json())
+          );
+          const statuses = await Promise.all(statusPromises);
+          
+          const statusMap: Record<string, RoomStatus> = {};
+          statuses.forEach((s: any) => {
+            if (s.success) {
+              statusMap[s.data.room_id] = {
+                roomId: s.data.room_id,
+                uiState: s.data.ui_state || 'free',
+              };
+            }
+          });
+          setRoomStatuses(statusMap);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch Floor 2 rooms:', error);
+    } finally {
+      setRoomsLoading(false);
+    }
+  };
 
   useEffect(() => {
     document.title = 'Admin Dashboard | Good Life Rooms';
     fetchStats();
     fetchRecentBookings();
+    fetchFloor2RoomsAndStatuses();
   }, []);
 
-  // Realtime updates: refresh bookings when any booking changes
+  // Realtime updates: refresh bookings and room statuses when any booking changes
   useEffect(() => {
     const channel = supabase
       .channel('admin-dashboard-updates')
@@ -94,8 +242,9 @@ export default function AdminDashboard() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'bookings' },
         () => {
-          // Refresh bookings when any booking is created, updated, or deleted
+          // Refresh bookings and room statuses when any booking is created, updated, or deleted
           fetchRecentBookings();
+          fetchFloor2RoomsAndStatuses();
         }
       )
       .subscribe();
@@ -283,6 +432,31 @@ export default function AdminDashboard() {
           );
         })}
       </div>
+
+      {/* Current Room Status - Floor 2 */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">
+            Current room status
+          </h2>
+          <span className="text-sm text-gray-500">Floor 2</span>
+        </div>
+        {roomsLoading ? (
+          <div className="text-gray-600 py-4">Loading rooms...</div>
+        ) : floor2Rooms.length === 0 ? (
+          <div className="text-gray-600 py-4">No rooms found on Floor 2</div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+            {floor2Rooms.map((room) => (
+              <RoomStatusCard
+                key={room.id}
+                room={room}
+                status={roomStatuses[room.id]}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* Recent bookings - kanban-style by status */}
       <section className="space-y-4">
