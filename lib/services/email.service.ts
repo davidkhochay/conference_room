@@ -1,6 +1,18 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy-initialize Resend to avoid build-time errors when API key is not available
+let resend: Resend | null = null;
+
+function getResendClient(): Resend {
+  if (!resend) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) {
+      throw new Error('RESEND_API_KEY environment variable is not set');
+    }
+    resend = new Resend(apiKey);
+  }
+  return resend;
+}
 
 export interface OverdueReminderEmailData {
   to: string;
@@ -160,7 +172,7 @@ export class EmailService {
         releaseUrl: data.releaseUrl,
       };
 
-      const { data: result, error } = await resend.emails.send({
+      const { data: result, error } = await getResendClient().emails.send({
         from: this.fromEmail,
         to: emailData.to,
         subject: 'Forgot to release the room?',
@@ -237,7 +249,7 @@ Hey ${hostName}, we couldn't extend your booking for ${roomName}.
 There is another event by ${conflictOwner} from ${formatTime(conflictStart, timezone)} to ${formatTime(conflictEnd, timezone)}.
 `.trim();
 
-      const { data: result, error } = await resend.emails.send({
+      const { data: result, error } = await getResendClient().emails.send({
         from: this.fromEmail,
         to,
         subject: `Can't extend ${roomName}`,
