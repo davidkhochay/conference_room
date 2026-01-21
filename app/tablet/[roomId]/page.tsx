@@ -6,7 +6,7 @@ import { Calendar, Clock, User, QrCode, Users, X, Key } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase/client';
-
+// RoomStatus interface
 interface RoomStatus {
   room_id: string;
   room_name: string;
