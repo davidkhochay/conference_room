@@ -54,6 +54,17 @@ export async function GET(request: NextRequest) {
     const { getServerAdminClient } = await import('@/lib/supabase/server');
     const supabase = getServerAdminClient();
 
+    // Load deleted Google events so they never appear in booking lists
+    const { data: deletedEvents, error: deletedError } = await supabase
+      .from('deleted_google_events')
+      .select('google_event_id');
+    if (deletedError) {
+      console.log('Failed to load deleted Google events:', deletedError.message);
+    }
+    const deletedEventIds = (deletedEvents || [])
+      .map((d) => d.google_event_id)
+      .filter((id): id is string => Boolean(id));
+
     if (roomId) {
       // Check if there are any recently created tablet bookings that are already
       // in_progress (auto-checked-in). Skip sync to prevent race conditions where
@@ -92,6 +103,13 @@ export async function GET(request: NextRequest) {
       .from('bookings')
       .select('*, room:rooms(*, location:locations(*)), host:users(*)')
       .order('start_time', { ascending: false });
+
+    if (deletedEventIds.length > 0) {
+      const inFilter = `(${deletedEventIds
+        .map((id) => `"${id.replace(/"/g, '\\"')}"`)
+        .join(',')})`;
+      query = query.not('google_event_id', 'in', inFilter);
+    }
 
     if (roomId) {
       query = query.eq('room_id', roomId);

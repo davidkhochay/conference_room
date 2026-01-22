@@ -196,11 +196,67 @@ export async function syncRoomFromGoogle(
     }
   });
 
+  // Load deleted google events to avoid re-creating them
+  const deletedEventIds = new Set<string>();
+  let deletedEvents: Array<{ google_event_id: string; google_calendar_id: string | null }> = [];
+  try {
+    // Query ALL deleted events (simple approach to ensure we don't miss any)
+    // The table shouldn't be too large since it only tracks admin deletions
+    const { data: deletedEventsData, error: deletedError } = await supabase
+      .from('deleted_google_events')
+      .select('google_event_id, google_calendar_id');
+    
+    if (deletedError) {
+      console.log('Error loading deleted events:', deletedError.message);
+    } else {
+      deletedEvents = (deletedEventsData || []) as Array<{
+        google_event_id: string;
+        google_calendar_id: string | null;
+      }>;
+      deletedEvents.forEach((d) => {
+        // Add the raw event ID for matching
+        deletedEventIds.add(d.google_event_id);
+        // Also add with calendar prefix for full key matching
+        if (d.google_calendar_id) {
+          deletedEventIds.add(`${d.google_calendar_id}:${d.google_event_id}`);
+        }
+      });
+      console.log(`Loaded ${deletedEventIds.size} deleted event IDs to skip (from ${deletedEvents.length} records)`);
+    }
+  } catch (e) {
+    // Table might not exist yet - continue without it
+    console.log('Could not load deleted events (table may not exist)', e);
+  }
+
+  // Hard-delete any locally stored bookings that are marked deleted for this calendar.
+  // This guarantees deleted items won't reappear even if a sync is running.
+  const deletedEventIdsForCalendar = deletedEvents
+    .filter((d) => !d.google_calendar_id || d.google_calendar_id === calendarId)
+    .map((d) => d.google_event_id);
+  if (deletedEventIdsForCalendar.length > 0) {
+    const { error: purgeError } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('room_id', roomId)
+      .in('google_event_id', deletedEventIdsForCalendar);
+    if (purgeError) {
+      console.log('Failed to purge deleted bookings during sync:', purgeError.message);
+    }
+  }
+
   const inserts: Array<Partial<Booking>> = [];
   const updates: Array<Partial<Booking>> = [];
 
   for (const raw of events as EventLike[]) {
     if (!raw.id) {
+      continue;
+    }
+
+    // Skip events that were explicitly deleted by admin
+    // Check both with calendar prefix and without (for backwards compatibility)
+    const eventKeyWithCalendar = `${calendarId}:${raw.id}`;
+    if (deletedEventIds.has(raw.id) || deletedEventIds.has(eventKeyWithCalendar)) {
+      console.log('Skipping deleted event:', raw.id);
       continue;
     }
 
@@ -221,6 +277,12 @@ export async function syncRoomFromGoogle(
       raw.attendees
         ?.filter((a) => a.email && !a.resource)
         .map((a) => String(a.email)) || [];
+    const attendeeResponseStatuses = (raw.attendees || [])
+      .filter((a) => a.email && !a.resource)
+      .reduce<Record<string, string>>((acc, a) => {
+        acc[String(a.email)] = String(a.responseStatus || 'needsAction');
+        return acc;
+      }, {});
 
     const privateId =
       raw.extendedProperties?.private?.['glc_booking_id'] || null;
@@ -282,6 +344,7 @@ export async function syncRoomFromGoogle(
       source: target ? target.source : 'google_calendar',
       status: effectiveStatus,
       attendee_emails: attendeeEmails,
+      attendee_response_statuses: attendeeResponseStatuses,
       organizer_email: organizerEmail,
       // Preserve external_source for existing bookings; for new events, check privateId
       external_source: target ? target.external_source : (privateId ? null : 'google_ui'),
@@ -289,17 +352,20 @@ export async function syncRoomFromGoogle(
     };
 
     if (target) {
+      console.log('UPDATE existing booking:', raw.id, 'target id:', target.id);
       updates.push({
         id: target.id,
         ...baseFields,
       });
     } else {
+      console.log('INSERT new booking:', raw.id, 'title:', raw.summary);
       inserts.push(baseFields);
     }
   }
 
   let changed = 0;
 
+  let newlyDeletedIds = new Set<string>();
   if (inserts.length) {
     // Before upserting, check if any of these google_event_ids already exist in the database.
     // This handles the case where a booking was created by our app but wasn't found in the
@@ -328,8 +394,34 @@ export async function syncRoomFromGoogle(
       }
     }
 
+    // Re-check deleted events RIGHT BEFORE upsert to handle race conditions
+    // (events might have been deleted while we were processing)
+    // Check BOTH inserts AND updates to prevent recreating deleted bookings
+    const allEventIds = [
+      ...inserts.map(b => b.google_event_id),
+      ...updates.map(b => b.google_event_id)
+    ].filter((id): id is string => !!id);
+    
+    newlyDeletedIds = new Set<string>();
+    if (allEventIds.length > 0) {
+      const { data: recentDeletes } = await supabase
+        .from('deleted_google_events')
+        .select('google_event_id')
+        .in('google_event_id', allEventIds);
+      if (recentDeletes) {
+        newlyDeletedIds = new Set(recentDeletes.map(d => d.google_event_id));
+        console.log(`Found ${newlyDeletedIds.size} deleted events to filter out from inserts/updates`);
+      }
+    }
+    
+    // Filter out any events that were deleted during processing
+    const filteredInserts = inserts.filter(b => !b.google_event_id || !newlyDeletedIds.has(b.google_event_id));
+    if (filteredInserts.length < inserts.length) {
+      console.log(`Filtered out ${inserts.length - filteredInserts.length} deleted events from inserts`);
+    }
+
     const { error: insertError } = await supabase.from('bookings').upsert(
-      inserts.map((b) => {
+      filteredInserts.map((b) => {
         // Check if this booking already exists (will be an update due to google_event_id conflict)
         const existingRecord = b.google_event_id
           ? existingByEventIdForInserts[b.google_event_id]
@@ -360,6 +452,7 @@ export async function syncRoomFromGoogle(
           // to avoid auto-checked-in tablet bookings reverting to scheduled
           status: effectiveStatus,
         attendee_emails: b.attendee_emails || [],
+        attendee_response_statuses: b.attendee_response_statuses || {},
         organizer_email: b.organizer_email,
           // CRITICAL: Preserve external_source if booking already exists to avoid
           // incorrectly marking tablet/web bookings as Google Calendar bookings
@@ -375,36 +468,69 @@ export async function syncRoomFromGoogle(
         `Failed to upsert Google-synced bookings: ${insertError.message}`
       );
     }
-    changed += inserts.length;
+    changed += filteredInserts.length;
   }
 
   if (updates.length) {
-    const { error: updateError } = await supabase.from('bookings').upsert(
-      updates.map((b) => ({
-        id: b.id,
-        room_id: b.room_id,
-        title: b.title,
-        description: b.description,
-        start_time: b.start_time,
-        end_time: b.end_time,
-        google_event_id: b.google_event_id,
-        google_calendar_id: b.google_calendar_id,
-        source: b.source,
-        status: b.status,
-        attendee_emails: b.attendee_emails || [],
-        organizer_email: b.organizer_email,
-        external_source: b.external_source,
-        last_synced_at: b.last_synced_at,
-      })),
-      { onConflict: 'id' }
-    );
-
-    if (updateError) {
-      throw new Error(
-        `Failed to update Google-synced bookings: ${updateError.message}`
-      );
+    // Re-fetch deleted events one more time right before UPDATE to catch any deletions
+    const updateEventIds = updates.map(b => b.google_event_id).filter((id): id is string => !!id);
+    let latestDeletedIds = new Set<string>();
+    if (updateEventIds.length > 0) {
+      const { data: latestDeletes } = await supabase
+        .from('deleted_google_events')
+        .select('google_event_id')
+        .in('google_event_id', updateEventIds);
+      if (latestDeletes) {
+        latestDeletedIds = new Set(latestDeletes.map(d => d.google_event_id));
+      }
     }
-    changed += updates.length;
+
+    // Filter out any updates for bookings that were deleted during processing
+    const filteredUpdates = updates.filter(b => {
+      if (!b.google_event_id) return true;
+      const shouldFilter =
+        deletedEventIds.has(b.google_event_id) ||
+        newlyDeletedIds.has(b.google_event_id) ||
+        latestDeletedIds.has(b.google_event_id);
+      if (shouldFilter) {
+        console.log(`Filtering out deleted event from updates: ${b.google_event_id}`);
+      }
+      return !shouldFilter;
+    });
+
+    if (filteredUpdates.length < updates.length) {
+      console.log(`Filtered out ${updates.length - filteredUpdates.length} deleted events from updates`);
+    }
+
+    // Use UPDATE instead of upsert to avoid recreating deleted rows.
+    for (const b of filteredUpdates) {
+      const { error: updateError } = await supabase
+        .from('bookings')
+        .update({
+          room_id: b.room_id,
+          title: b.title,
+          description: b.description,
+          start_time: b.start_time,
+          end_time: b.end_time,
+          google_event_id: b.google_event_id,
+          google_calendar_id: b.google_calendar_id,
+          source: b.source,
+          status: b.status,
+          attendee_emails: b.attendee_emails || [],
+          attendee_response_statuses: b.attendee_response_statuses || {},
+          organizer_email: b.organizer_email,
+          external_source: b.external_source,
+          last_synced_at: b.last_synced_at,
+        })
+        .eq('id', b.id);
+
+      if (updateError) {
+        throw new Error(
+          `Failed to update Google-synced bookings: ${updateError.message}`
+        );
+      }
+      changed += 1;
+    }
   }
 
   roomSyncTimestamps.set(roomId, nowMs);

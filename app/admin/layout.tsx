@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, MapPin, Users, DoorOpen, Settings, BarChart3, Home, Menu, X, Repeat } from 'lucide-react';
+import { Building2, MapPin, Users, DoorOpen, Settings, BarChart3, Home, Menu, X, Repeat, CalendarDays } from 'lucide-react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -22,6 +22,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { href: '/admin/locations', label: 'Locations', icon: MapPin },
     { href: '/admin/rooms', label: 'Rooms', icon: DoorOpen },
     { href: '/admin/users', label: 'Users', icon: Users },
+    { href: '/admin/bookings', label: 'Bookings', icon: CalendarDays },
     { href: '/admin/recurring', label: 'Recurring', icon: Repeat },
     { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
     { href: '/admin/settings', label: 'Settings', icon: Settings },

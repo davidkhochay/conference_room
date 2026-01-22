@@ -150,6 +150,7 @@ export type Booking = {
   check_in_time: string | null;
   extended_count: number;
   attendee_emails: string[];
+  attendee_response_statuses?: Record<string, string> | null;
   /**
    * Optional metadata for events that originated outside this app, e.g.
    * meetings created directly in the Google Calendar UI.

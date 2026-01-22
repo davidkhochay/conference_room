@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { Card } from '@/lib/components/ui/Card';
 import { Building2, MapPin, DoorOpen, Users, Calendar, Clock } from 'lucide-react';
 import { bucketBookings, normalizeBookingStatus } from '@/lib/utils/bookingStatus';
@@ -13,6 +14,8 @@ interface Booking {
   start_time: string;
   end_time: string;
   status: string;
+  attendee_emails?: string[];
+  attendee_response_statuses?: Record<string, string> | null;
   room: {
     name: string;
   } | null;
@@ -297,6 +300,7 @@ export default function AdminDashboard() {
       icon: Building2,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100',
+      href: '/admin/companies',
     },
     {
       name: 'Locations',
@@ -304,6 +308,7 @@ export default function AdminDashboard() {
       icon: MapPin,
       color: 'text-green-600',
       bgColor: 'bg-green-100',
+      href: '/admin/locations',
     },
     {
       name: 'Rooms',
@@ -311,6 +316,7 @@ export default function AdminDashboard() {
       icon: DoorOpen,
       color: 'text-purple-600',
       bgColor: 'bg-purple-100',
+      href: '/admin/rooms',
     },
     {
       name: 'Users',
@@ -318,6 +324,7 @@ export default function AdminDashboard() {
       icon: Users,
       color: 'text-orange-600',
       bgColor: 'bg-orange-100',
+      href: '/admin/users',
     },
     {
       name: 'Total Bookings',
@@ -325,6 +332,7 @@ export default function AdminDashboard() {
       icon: Calendar,
       color: 'text-pink-600',
       bgColor: 'bg-pink-100',
+      href: '/admin/bookings',
     },
   ];
 
@@ -363,6 +371,18 @@ export default function AdminDashboard() {
 
   const renderBookingRow = (booking: Booking) => {
     const { label, classes } = getStatusStyles(booking);
+    const getAttendeeStatusRingClass = (status?: string | null) => {
+      switch (status) {
+        case 'accepted':
+          return 'ring-2 ring-emerald-500';
+        case 'tentative':
+          return 'ring-2 ring-amber-500';
+        case 'declined':
+          return 'ring-2 ring-rose-500';
+        default:
+          return 'ring-2 ring-gray-300';
+      }
+    };
 
     return (
       <div
@@ -382,24 +402,44 @@ export default function AdminDashboard() {
           </span>
         </div>
 
-        {/* Details row */}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600">
+        {/* Details stack */}
+        <div className="flex flex-col gap-1 text-xs text-gray-600">
           {booking.room && (
             <span className="flex items-center">
               <DoorOpen className="w-4 h-4 mr-1.5" />
               {booking.room.name}
             </span>
           )}
-          {booking.host && (
-            <span className="flex items-center">
-              <Users className="w-4 h-4 mr-1.5" />
-              {booking.host.name}
-            </span>
-          )}
           <span className="flex items-center">
             <Clock className="w-4 h-4 mr-1.5" />
             {formatDateTime(booking.start_time)}
           </span>
+          {booking.host && (
+            <div className="flex flex-col">
+              <span className="flex items-center text-xs text-gray-700">
+                <Users className="w-4 h-4 mr-1.5" />
+                {booking.host.name}
+              </span>
+              {booking.attendee_emails && booking.attendee_emails.length > 0 && (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  {booking.attendee_emails.map((email) => {
+                    const status = booking.attendee_response_statuses?.[email] || 'needsAction';
+                    const ringClass = getAttendeeStatusRingClass(status);
+                    const initial = email.charAt(0).toUpperCase();
+                    return (
+                      <div
+                        key={email}
+                        className={`w-4 h-4 rounded-full bg-white text-gray-700 text-[9px] flex items-center justify-center ${ringClass}`}
+                        title={`${email} • ${status}`}
+                      >
+                        {initial}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -418,17 +458,19 @@ export default function AdminDashboard() {
         {statCards.map((stat) => {
           const Icon = stat.icon;
           return (
-            <Card key={stat.name} className="rounded-3xl bg-white tablet-shadow hover:translate-y-0.5 transition-transform">
-              <div className="flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bgColor}`}>
-                  <Icon className={`w-6 h-6 ${stat.color}`} />
+            <Link key={stat.name} href={stat.href}>
+              <Card className="rounded-3xl bg-white tablet-shadow hover:translate-y-0.5 hover:shadow-lg transition-all cursor-pointer">
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${stat.bgColor}`}>
+                    <Icon className={`w-6 h-6 ${stat.color}`} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">{stat.name}</p>
+                    <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-600">{stat.name}</p>
-                  <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
-                </div>
-              </div>
-            </Card>
+              </Card>
+            </Link>
           );
         })}
       </div>

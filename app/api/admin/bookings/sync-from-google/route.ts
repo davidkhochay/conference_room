@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     const { data: rooms, error } = await supabase
       .from('rooms')
       .select('id')
-      .or('google_calendar_id.is.not.null,google_resource_id.is.not.null');
+      .or('google_calendar_id.not.is.null,google_resource_id.not.is.null');
 
     if (error) {
       throw new Error(`Failed to load rooms for sync: ${error.message}`);

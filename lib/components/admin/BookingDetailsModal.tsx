@@ -26,6 +26,7 @@ interface BookingDetails {
   check_in_time: string | null;
   extended_count: number;
   attendee_emails: string[];
+  attendee_response_statuses?: Record<string, string> | null;
   created_at: string;
   source: string;
   external_source?: string | null;
@@ -260,10 +261,28 @@ export function BookingDetailsModal({ bookingId, onClose }: BookingDetailsModalP
                     Attendees ({booking.attendee_emails.length})
                   </h4>
                   <Card className="bg-purple-50 border-purple-200">
-                    <div className="space-y-1">
-                      {booking.attendee_emails.map((email, idx) => (
-                        <p key={idx} className="text-sm text-gray-700">{email}</p>
-                      ))}
+                    <div className="space-y-2">
+                      {booking.attendee_emails.map((email, idx) => {
+                        const status = booking.attendee_response_statuses?.[email] || 'needsAction';
+                        const statusLabel =
+                          status === 'accepted' ? 'Accepted' :
+                          status === 'declined' ? 'Declined' :
+                          status === 'tentative' ? 'Tentative' :
+                          'No response';
+                        const statusClass =
+                          status === 'accepted' ? 'bg-green-100 text-green-800' :
+                          status === 'declined' ? 'bg-red-100 text-red-800' :
+                          status === 'tentative' ? 'bg-amber-100 text-amber-800' :
+                          'bg-gray-100 text-gray-700';
+                        return (
+                          <div key={idx} className="flex items-center justify-between gap-2">
+                            <p className="text-sm text-gray-700 truncate">{email}</p>
+                            <span className={`px-2 py-0.5 text-xs font-medium rounded ${statusClass}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </Card>
                 </div>
