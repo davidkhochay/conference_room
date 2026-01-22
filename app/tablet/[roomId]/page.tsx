@@ -439,7 +439,23 @@ export default function TabletDisplay() {
             source: b.source || null,
             external_source: b.external_source || null,
           }));
-        setAllBookings(bookings);
+        const normalizeTime = (iso: string) => {
+          if (!iso) return '';
+          return new Date(iso).toISOString().slice(0, 16);
+        };
+        const byKey = new Map<string, typeof bookings[number]>();
+        for (const b of bookings) {
+          const dedupeKey = `${roomId}:${normalizeTime(b.start_time)}:${normalizeTime(b.end_time)}`;
+          if (!byKey.has(dedupeKey)) {
+            byKey.set(dedupeKey, b);
+          } else {
+            const existing = byKey.get(dedupeKey)!;
+            if (b.source === 'google_calendar' && existing.source !== 'google_calendar') {
+              byKey.set(dedupeKey, b);
+            }
+          }
+        }
+        setAllBookings(Array.from(byKey.values()));
       }
     } catch (error) {
       console.error('Failed to fetch bookings:', error);

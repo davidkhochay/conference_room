@@ -41,6 +41,7 @@ interface Booking {
   external_source: string | null;
   is_recurring?: boolean;
   recurring_parent_id?: string | null;
+  room_id?: string | null;
   room: {
     id: string;
     name: string;
@@ -584,17 +585,28 @@ export default function AdminBookingsPage() {
     // Re-sort merged groups after concatenation and de-duplicate identical occurrences
     for (const [key, groupBookings] of mergedGroups) {
       groupBookings.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-      const seen = new Set<string>();
-      const deduped: Booking[] = [];
-      for (const b of groupBookings) {
-        const dedupeKey = `${b.room_id || ''}:${b.start_time}:${b.end_time}`;
-        if (seen.has(dedupeKey)) {
-          continue;
+      const byKey = new Map<string, Booking>();
+      const normalizeTime = (iso: string) => {
+        if (!iso) return '';
+        return new Date(iso).toISOString().slice(0, 16); // minute precision
+      };
+      const getRoomKey = (b: Booking) => b.room_id || b.room?.id || b.room?.name || 'room';
+      const preferGoogle = (current: Booking, incoming: Booking) => {
+        if (incoming.source === 'google_calendar' && current.source !== 'google_calendar') {
+          return incoming;
         }
-        seen.add(dedupeKey);
-        deduped.push(b);
+        return current;
+      };
+      for (const b of groupBookings) {
+        const dedupeKey = `${getRoomKey(b)}:${normalizeTime(b.start_time)}:${normalizeTime(b.end_time)}`;
+        if (!byKey.has(dedupeKey)) {
+          byKey.set(dedupeKey, b);
+        } else {
+          const existing = byKey.get(dedupeKey)!;
+          byKey.set(dedupeKey, preferGoogle(existing, b));
+        }
       }
-      mergedGroups.set(key, deduped);
+      mergedGroups.set(key, Array.from(byKey.values()).sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()));
     }
     
     return { groups: mergedGroups, standalone };
