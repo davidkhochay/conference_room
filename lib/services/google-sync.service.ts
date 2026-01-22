@@ -35,7 +35,11 @@ type EventLike = {
   end?: { dateTime?: string | null; date?: string | null } | null;
   status?: string | null;
   organizer?: { email?: string | null } | null;
-  attendees?: Array<{ email?: string | null; resource?: boolean | null }> | null;
+  attendees?: Array<{
+    email?: string | null;
+    resource?: boolean | null;
+    responseStatus?: string | null;
+  }> | null;
   extendedProperties?: {
     private?: Record<string, string> | null;
   } | null;
