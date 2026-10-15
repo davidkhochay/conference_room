@@ -8,6 +8,10 @@ require('dotenv').config({ path: '.env.local' });
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const projectRef = supabaseUrl?.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1];
+const dashboardUrl = projectRef
+  ? `https://supabase.com/dashboard/project/${projectRef}`
+  : 'https://supabase.com/dashboard';
 
 console.log('\n🔍 Testing Supabase Connection...\n');
 console.log('Supabase URL:', supabaseUrl);
@@ -48,7 +52,7 @@ async function testConnection() {
     if (locError) {
       console.error('❌ Schema error:', locError.message);
       console.error('\n💡 You need to run the schema.sql file in Supabase!');
-      console.error('   1. Go to: https://supabase.com/dashboard/project/xpzzvuaqiytgnaychoea');
+      console.error('   1. Go to:', dashboardUrl);
       console.error('   2. Click SQL Editor');
       console.error('   3. Copy contents of supabase/schema.sql');
       console.error('   4. Paste and Run');
@@ -81,7 +85,7 @@ async function testConnection() {
 
     if (locCount === 0) {
       console.log('\n⚠️  No data found! Run the seed script:');
-      console.log('   1. Go to: https://supabase.com/dashboard/project/xpzzvuaqiytgnaychoea');
+      console.log('   1. Go to:', dashboardUrl);
       console.log('   2. Click SQL Editor');
       console.log('   3. Copy contents of scripts/quick-seed.sql');
       console.log('   4. Paste and Run');
